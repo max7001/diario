@@ -1,0 +1,2058 @@
+/**
+ * WebApp Note & Diario Responsiva
+ * Supporta: IndexedDB, Parser Diaro TXT, Backup JSON, Calendario Mensile, Galleria Foto, Statistiche
+ */
+
+// ================= CONSTANTI & UTILITY =================
+const DB_NAME = 'NotesDiaroDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'notes';
+
+const ITALIAN_MONTHS = [
+  'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
+];
+
+const ITALIAN_MONTHS_SHORT = [
+  'Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+  'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'
+];
+
+const ITALIAN_DAYS = [
+  'Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'
+];
+
+// Helper per formattazione data in italiano
+function formatItalianDate(dateObj, includeTime = true) {
+  if (!dateObj || isNaN(dateObj.getTime())) return 'Data non valida';
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = ITALIAN_MONTHS_SHORT[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  const hours = String(dateObj.getHours()).padStart(2, '0');
+  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+  
+  if (includeTime) {
+    return `${day} ${month} ${year}, ${hours}:${minutes}`;
+  }
+  return `${day} ${month} ${year}`;
+}
+
+function formatFullItalianDate(dateObj) {
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = ITALIAN_MONTHS[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  const weekday = ITALIAN_DAYS[dateObj.getDay()];
+  const hours = String(dateObj.getHours()).padStart(2, '0');
+  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+  return `${day} ${month} ${year}, ${weekday} ${hours}:${minutes}`;
+}
+
+// Converte Date in valore per input type="datetime-local" (YYYY-MM-DDTHH:mm)
+function toDatetimeLocalValue(dateObj) {
+  const d = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+// ================= FIREBASE CONFIGURATION & FIRESTORE MANAGER =================
+const firebaseConfig = {
+  apiKey: "AIzaSyAEROCv8lYbMaxDVhg4u4kcfjGPO2UZL2M",
+  authDomain: "app-create-con-ai.firebaseapp.com",
+  projectId: "app-create-con-ai",
+  storageBucket: "app-create-con-ai.firebasestorage.app",
+  messagingSenderId: "492848248969",
+  appId: "1:492848248969:web:d2e259d742d46614b66e58",
+  measurementId: "G-LXBDP5Q92P"
+};
+
+class FirebaseStorageManager {
+  constructor() {
+    this.app = null;
+    this.auth = null;
+    this.db = null;
+    this.isOnline = false;
+    this.userId = null;
+    this.unsubscribeListener = null;
+  }
+
+  async init() {
+    if (typeof firebase === 'undefined') {
+      console.warn('SDK Firebase non caricato, opero in modalità locale.');
+      return false;
+    }
+
+    try {
+      if (!firebase.apps.length) {
+        this.app = firebase.initializeApp(firebaseConfig);
+      } else {
+        this.app = firebase.app();
+      }
+
+      this.auth = firebase.auth();
+      this.db = firebase.firestore();
+
+      // Abilita persistenza offline di Firestore
+      try {
+        await this.db.enablePersistence({ synchronizeTabs: true });
+      } catch (persErr) {
+        if (persErr.code === 'failed-precondition') {
+          console.warn('Persistenza Firestore attiva in un\'altra scheda.');
+        } else if (persErr.code === 'unimplemented') {
+          console.warn('Browser non supporta persistenza Firestore.');
+        }
+      }
+
+      // Autenticazione anonima automatica
+      await new Promise((resolve) => {
+        this.auth.onAuthStateChanged(async (user) => {
+          if (user) {
+            this.userId = user.uid;
+            this.isOnline = true;
+            resolve(user);
+          } else {
+            try {
+              const cred = await this.auth.signInAnonymously();
+              this.userId = cred.user.uid;
+              this.isOnline = true;
+              resolve(cred.user);
+            } catch (authErr) {
+              console.warn('Errore autenticazione anonima Firebase:', authErr);
+              resolve(null);
+            }
+          }
+        });
+      });
+
+      return true;
+    } catch (e) {
+      console.error('Errore inizializzazione Firebase:', e);
+      return false;
+    }
+  }
+
+  getNotesCollection() {
+    if (!this.db) return null;
+    return this.db.collection('notes');
+  }
+
+  subscribeNotes(onUpdate, onError) {
+    const col = this.getNotesCollection();
+    if (!col) return () => {};
+
+    if (this.unsubscribeListener) {
+      this.unsubscribeListener();
+    }
+
+    this.unsubscribeListener = col.onSnapshot(
+      (snapshot) => {
+        const notes = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          notes.push({ id: doc.id, ...data });
+        });
+        notes.sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (onUpdate) onUpdate(notes);
+      },
+      (error) => {
+        console.warn('Errore snapshot Firestore:', error);
+        if (onError) onError(error);
+      }
+    );
+
+    return this.unsubscribeListener;
+  }
+
+  async saveNote(note) {
+    const col = this.getNotesCollection();
+    if (!col) return;
+    try {
+      // Sanitizzazione dati per Firestore
+      const cleanNote = { ...note };
+      await col.doc(note.id).set(cleanNote, { merge: true });
+    } catch (e) {
+      console.error('Errore salvataggio Firebase:', e);
+    }
+  }
+
+  async deleteNote(id) {
+    const col = this.getNotesCollection();
+    if (!col) return;
+    try {
+      await col.doc(id).delete();
+    } catch (e) {
+      console.error('Errore eliminazione Firebase:', e);
+    }
+  }
+
+  async saveBatch(notes) {
+    if (!this.db || !notes || notes.length === 0) return;
+    try {
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < notes.length; i += BATCH_SIZE) {
+        const chunk = notes.slice(i, i + BATCH_SIZE);
+        const batch = this.db.batch();
+        const col = this.getNotesCollection();
+        chunk.forEach((n) => {
+          const ref = col.doc(n.id);
+          batch.set(ref, n, { merge: true });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error('Errore batch Firebase:', e);
+    }
+  }
+
+  async clearAll(notes) {
+    if (!this.db || !notes || notes.length === 0) return;
+    try {
+      const BATCH_SIZE = 400;
+      for (let i = 0; i < notes.length; i += BATCH_SIZE) {
+        const chunk = notes.slice(i, i + BATCH_SIZE);
+        const batch = this.db.batch();
+        const col = this.getNotesCollection();
+        chunk.forEach((n) => {
+          batch.delete(col.doc(n.id));
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error('Errore clear Firebase:', e);
+    }
+  }
+}
+
+// ================= INDEXED DB MANAGER =================
+class NoteDatabase {
+  constructor() {
+    this.db = null;
+  }
+
+  async init() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          store.createIndex('date', 'date', { unique: false });
+          store.createIndex('title', 'title', { unique: false });
+          store.createIndex('folder', 'folder', { unique: false });
+        }
+      };
+      request.onsuccess = (event) => {
+        this.db = event.target.result;
+        resolve(this.db);
+      };
+      request.onerror = (event) => {
+        console.error('Errore apertura IndexedDB:', event.target.error);
+        reject(event.target.error);
+      };
+    });
+  }
+
+  async getAll() {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async get(id) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async put(note) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(note);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async putBatch(notes) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      for (const note of notes) {
+        store.put(note);
+      }
+      transaction.oncomplete = () => resolve(notes.length);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async delete(id) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async clear() {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.clear();
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => reject(request.error);
+    });
+  }
+}
+
+// ================= PARSER DIARO .TXT =================
+function parseDiaroExportText(text) {
+  if (!text) return [];
+
+  // Mappa mesi italiani
+  const monthMap = {
+    'gennaio': 0, 'gen': 0,
+    'febbraio': 1, 'feb': 1,
+    'marzo': 2, 'mar': 2,
+    'aprile': 3, 'apr': 3,
+    'maggio': 4, 'mag': 4,
+    'giugno': 5, 'giu': 5,
+    'luglio': 6, 'lug': 6,
+    'agosto': 7, 'ago': 7,
+    'settembre': 8, 'set': 8,
+    'ottobre': 9, 'ott': 9,
+    'novembre': 10, 'nov': 10,
+    'dicembre': 11, 'dic': 11
+  };
+
+  // La nota comincia SEMPRE con una riga contenente la data in formato:
+  // "20 Febbraio 2013, Mercoledì 15:33" oppure "17 Giugno 2024, 13:03"
+  const dateRegex = /^\s*(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})(?:,\s+([A-Za-zÀ-ÿ]+))?\s+(\d{1,2}):(\d{2})\s*$/i;
+
+  const lines = text.split(/\r?\n/);
+  const rawNotes = [];
+  let currentNote = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const stripped = rawLine.trim();
+
+    // La nota termina con una serie di 80 trattini (o >= 80)
+    const isMainSeparator = stripped.length >= 80 && /^-(?:-{79,})$/.test(stripped);
+
+    if (isMainSeparator) {
+      if (currentNote !== null) {
+        rawNotes.push(currentNote);
+        currentNote = null;
+      }
+      continue;
+    }
+
+    // Verifica se la riga è una data che dà inizio a una nuova nota
+    const dateMatch = stripped.match(dateRegex);
+    if (dateMatch && currentNote === null) {
+      const day = parseInt(dateMatch[1], 10);
+      const monthStr = dateMatch[2].toLowerCase();
+      const year = parseInt(dateMatch[3], 10);
+      const hours = parseInt(dateMatch[5], 10);
+      const minutes = parseInt(dateMatch[6], 10);
+
+      const monthIndex = monthMap[monthStr] !== undefined ? monthMap[monthStr] : 0;
+      const dateObj = new Date(year, monthIndex, day, hours, minutes);
+
+      currentNote = {
+        dateObj: dateObj,
+        dateString: stripped,
+        bodyLines: []
+      };
+    } else if (currentNote !== null) {
+      // Linee interne al corpo della nota (compresi separatori interni più corti come 10-60 trattini)
+      currentNote.bodyLines.push(rawLine);
+    }
+  }
+
+  if (currentNote !== null) {
+    rawNotes.push(currentNote);
+  }
+
+  // Costruzione delle note complete
+  const notes = [];
+  const titleRegex = /:::\s*([\s\S]*?)\s*:::/;
+
+  for (let item of rawNotes) {
+    let rawText = item.bodyLines.join('\n').trim();
+    let title = '';
+    let weather = '';
+    let location = '';
+    let folder = '';
+    let tags = [];
+
+    // Estrazione eventuale titolo delimitato da ::: Titolo :::
+    const titleMatch = rawText.match(titleRegex);
+    if (titleMatch) {
+      title = titleMatch[1].trim().replace(/\n+/g, ' - ');
+      rawText = rawText.replace(titleMatch[0], '').trim();
+    }
+
+    // Estrazione metadati (Meteo, Luogo, Cartella, Etichette)
+    const contentLines = [];
+    const textLines = rawText.split('\n');
+
+    for (let l of textLines) {
+      const trimmed = l.trim();
+      if (/^Meteo:\s*/i.test(trimmed)) {
+        weather = trimmed.replace(/^Meteo:\s*/i, '').trim();
+      } else if (/^Luogo:\s*/i.test(trimmed)) {
+        location = trimmed.replace(/^Luogo:\s*/i, '').trim();
+      } else if (/^Cartella:\s*/i.test(trimmed)) {
+        folder = trimmed.replace(/^Cartella:\s*/i, '').trim();
+      } else if (/^Etichette:\s*/i.test(trimmed)) {
+        const rawTags = trimmed.replace(/^Etichette:\s*/i, '').trim();
+        tags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
+      } else {
+        contentLines.push(l);
+      }
+    }
+
+    let finalContent = contentLines.join('\n').trim();
+
+    // Se non è stato trovato un titolo con :::, usa la prima riga utile
+    if (!title && finalContent) {
+      const firstLine = finalContent.split('\n')[0].trim();
+      if (firstLine.length > 0 && firstLine.length < 60) {
+        title = firstLine;
+      } else if (firstLine.length >= 60) {
+        title = firstLine.substring(0, 50) + '...';
+      } else {
+        title = 'Nota del ' + formatItalianDate(item.dateObj, false);
+      }
+    } else if (!title) {
+      title = 'Nota del ' + formatItalianDate(item.dateObj, false);
+    }
+
+    notes.push({
+      id: 'diaro_' + item.dateObj.getTime() + '_' + Math.random().toString(36).substr(2, 6),
+      title: title,
+      content: finalContent,
+      date: item.dateObj.toISOString(),
+      weather: weather,
+      location: location,
+      folder: folder,
+      tags: tags,
+      photos: [],
+      pinned: false,
+      createdAt: item.dateObj.toISOString(),
+      updatedAt: item.dateObj.toISOString()
+    });
+  }
+
+  // Ordina per data decrescente (più recenti in alto)
+  notes.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return notes;
+}
+
+// ================= ESPORTATORE DIARO .TXT =================
+function generateDiaroTxt(notes) {
+  const parts = [];
+  // 80 trattini esatti standard
+  const SEPARATOR_80 = '--------------------------------------------------------------------------------';
+  const sorted = [...notes].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  for (const n of sorted) {
+    const d = new Date(n.date);
+    let block = `${formatFullItalianDate(d)}\n\n::: ${n.title || 'Senza Titolo'} :::\n\n`;
+    if (n.content) {
+      block += `${n.content}\n\n`;
+    }
+    if (n.weather) {
+      block += `Meteo: ${n.weather}\n\n`;
+    }
+    if (n.location) {
+      block += `Luogo: ${n.location}\n\n`;
+    }
+    if (n.folder) {
+      block += `Cartella: ${n.folder}\n\n`;
+    }
+    if (n.tags && n.tags.length > 0) {
+      block += `Etichette: ${n.tags.join(', ')}\n\n`;
+    }
+    block += `${SEPARATOR_80}\n`;
+    parts.push(block);
+  }
+
+  return parts.join('\n');
+}
+
+// ================= CONTROLLER PRINCIPALE APP =================
+class AppController {
+  constructor() {
+    this.db = new NoteDatabase();
+    this.firebase = new FirebaseStorageManager();
+    this.notes = [];
+    this.currentView = 'notes'; // 'notes', 'calendar', 'stats', 'settings'
+    this.currentFilter = 'all'; // 'all', 'photos', 'recent', 'folder:XYZ', 'day:YYYY-MM-DD'
+    this.searchQuery = '';
+    this.currentSort = 'date-desc';
+    
+    // Editor State
+    this.editingNoteId = null;
+    this.editorPhotos = []; // array of base64 strings
+
+    // Calendar State
+    this.calendarDate = new Date();
+    this.selectedCalendarDay = null;
+
+    // Toast Timer
+    this.toastTimer = null;
+  }
+
+  async init() {
+    try {
+      // 1. Inizializzazione archivio locale (IndexedDB)
+      await this.db.init();
+      this.initTheme();
+      await this.loadNotes();
+      this.initEventListeners();
+      this.render();
+      this.updateStorageStats();
+
+      // 2. Inizializzazione sincronizzazione Firebase Cloud (Firestore)
+      this.setCloudStatus('syncing', 'Connessione...');
+      const fbOnline = await this.firebase.init();
+
+      if (fbOnline) {
+        this.setCloudStatus('online', 'Cloud Sync Attivo');
+        
+        // Sottoscrizione alle modifiche in tempo reale da Firestore
+        this.firebase.subscribeNotes(
+          async (cloudNotes) => {
+            if (cloudNotes && cloudNotes.length > 0) {
+              this.notes = cloudNotes;
+              await this.db.putBatch(cloudNotes);
+              this.sortNotes();
+              this.render();
+              this.updateStorageStats();
+              this.setCloudStatus('online', 'Sincronizzato');
+            } else if (this.notes.length > 0) {
+              // Se Firestore è vuoto ma abbiamo note locali, sincronizza il cloud
+              await this.firebase.saveBatch(this.notes);
+            }
+          },
+          (err) => {
+            console.warn('Errore connessione Firestore:', err);
+            this.setCloudStatus('offline', 'Offline (Locale)');
+          }
+        );
+      } else {
+        this.setCloudStatus('offline', 'Offline (Locale)');
+      }
+    } catch (e) {
+      console.error('Errore inizializzazione app:', e);
+      this.showToast('Errore nel caricamento del database', 'error');
+      this.setCloudStatus('offline', 'Offline (Locale)');
+    }
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  }
+
+  setCloudStatus(status, text) {
+    const badge = document.getElementById('cloud-status-badge');
+    const dot = document.getElementById('cloud-status-dot');
+    const textEl = document.getElementById('cloud-status-text');
+
+    if (!badge || !dot || !textEl) return;
+
+    if (status === 'online') {
+      badge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50';
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse';
+      textEl.textContent = text || 'Cloud';
+    } else if (status === 'syncing') {
+      badge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50';
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-spin';
+      textEl.textContent = text || 'Sincronizzo...';
+    } else {
+      badge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700';
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-slate-400';
+      textEl.textContent = text || 'Offline';
+    }
+  }
+
+  // --- TEMA CHIARO / SCURO ---
+  initTheme() {
+    const savedTheme = localStorage.getItem('notes_theme');
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+
+  toggleTheme() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('notes_theme', isDark ? 'dark' : 'light');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // --- CARICAMENTO DATI ---
+  async loadNotes() {
+    try {
+      this.notes = await this.db.getAll();
+      this.sortNotes();
+    } catch (e) {
+      console.error('Errore lettura note:', e);
+      this.notes = [];
+    }
+  }
+
+  sortNotes() {
+    if (this.currentSort === 'date-desc') {
+      this.notes.sort((a, b) => new Date(b.date) - new Date(a.date));
+    } else if (this.currentSort === 'date-asc') {
+      this.notes.sort((a, b) => new Date(a.date) - new Date(b.date));
+    } else if (this.currentSort === 'title-asc') {
+      this.notes.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (this.currentSort === 'title-desc') {
+      this.notes.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+    }
+  }
+
+  changeSort(value) {
+    this.currentSort = value;
+    this.sortNotes();
+    this.renderNotesList();
+  }
+
+  // --- GESTIONE VISTE E NAVIGAZIONE ---
+  switchView(viewName) {
+    this.currentView = viewName;
+
+    // Nascondi tutte le sezioni
+    ['view-notes', 'view-calendar', 'view-stats', 'view-settings'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+
+    // Reset stili bottoni desktop
+    ['nav-desktop-notes', 'nav-desktop-calendar', 'nav-desktop-stats', 'nav-desktop-settings'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white';
+      }
+    });
+
+    // Reset stili bottoni mobile
+    ['nav-mobile-notes', 'nav-mobile-calendar', 'nav-mobile-stats', 'nav-mobile-settings'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.className = 'flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 py-1 transition-colors';
+        const span = el.querySelector('span');
+        if (span) span.className = 'text-[10px] font-medium';
+      }
+    });
+
+    // Attiva sezione corrente
+    const targetSection = document.getElementById(`view-${viewName}`);
+    if (targetSection) targetSection.classList.remove('hidden');
+
+    // Evidenzia bottone desktop attivo
+    const desktopBtn = document.getElementById(`nav-desktop-${viewName}`);
+    if (desktopBtn) {
+      desktopBtn.className = 'px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all bg-white dark:bg-slate-700 text-blue-600 dark:text-white font-bold shadow-sm';
+    }
+
+    // Evidenzia bottone mobile attivo
+    const mobileBtn = document.getElementById(`nav-mobile-${viewName}`);
+    if (mobileBtn) {
+      mobileBtn.className = 'flex flex-col items-center justify-center gap-1 text-blue-600 dark:text-blue-400 py-1 transition-colors';
+      const span = mobileBtn.querySelector('span');
+      if (span) span.className = 'text-[10px] font-bold';
+    }
+
+    // Renderizza contenuti specifici della vista
+    if (viewName === 'notes') {
+      this.renderNotesList();
+    } else if (viewName === 'calendar') {
+      this.renderCalendar();
+    } else if (viewName === 'stats') {
+      this.renderStats();
+    } else if (viewName === 'settings') {
+      this.updateStorageStats();
+    }
+
+    if (window.lucide) lucide.createIcons();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // --- FILTRI & RICERCA NOTE ---
+  onSearchInput(val) {
+    this.searchQuery = val.trim().toLowerCase();
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (clearBtn) {
+      if (this.searchQuery) clearBtn.classList.remove('hidden');
+      else clearBtn.classList.add('hidden');
+    }
+    this.renderNotesList();
+  }
+
+  clearSearch() {
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    this.searchQuery = '';
+    document.getElementById('search-clear-btn')?.classList.add('hidden');
+    this.renderNotesList();
+  }
+
+  setFilter(filterType) {
+    this.currentFilter = filterType;
+    
+    // Aggiorna stile chips
+    ['chip-filter-all', 'chip-filter-photos', 'chip-filter-recent'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.className = 'chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1';
+      }
+    });
+
+    const activeBtn = document.getElementById(`chip-filter-${filterType}`);
+    if (activeBtn) {
+      activeBtn.className = 'chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1';
+    }
+
+    this.renderNotesList();
+  }
+
+  resetFilters() {
+    this.currentFilter = 'all';
+    this.searchQuery = '';
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    document.getElementById('search-clear-btn')?.classList.add('hidden');
+    this.setFilter('all');
+  }
+
+  getFilteredNotes() {
+    let result = [...this.notes];
+
+    // Filtro Ricerca
+    if (this.searchQuery) {
+      result = result.filter(n => {
+        const title = (n.title || '').toLowerCase();
+        const content = (n.content || '').toLowerCase();
+        const weather = (n.weather || '').toLowerCase();
+        const loc = (n.location || '').toLowerCase();
+        const folder = (n.folder || '').toLowerCase();
+        return title.includes(this.searchQuery) ||
+               content.includes(this.searchQuery) ||
+               weather.includes(this.searchQuery) ||
+               loc.includes(this.searchQuery) ||
+               folder.includes(this.searchQuery);
+      });
+    }
+
+    // Filtro Chip
+    if (this.currentFilter === 'photos') {
+      result = result.filter(n => n.photos && n.photos.length > 0);
+    } else if (this.currentFilter === 'recent') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      result = result.filter(n => new Date(n.date) >= thirtyDaysAgo);
+    } else if (this.currentFilter.startsWith('day:')) {
+      const targetDayStr = this.currentFilter.replace('day:', '');
+      result = result.filter(n => {
+        const d = new Date(n.date);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}` === targetDayStr;
+      });
+    } else if (this.currentFilter.startsWith('folder:')) {
+      const targetFolder = this.currentFilter.replace('folder:', '');
+      result = result.filter(n => (n.folder || '').toLowerCase() === targetFolder.toLowerCase());
+    }
+
+    return result;
+  }
+
+  // --- RENDERING ELENCO NOTE ---
+  render() {
+    this.renderNotesList();
+    this.updateCounters();
+  }
+
+  updateCounters() {
+    const total = this.notes.length;
+    const withPhotos = this.notes.filter(n => n.photos && n.photos.length > 0).length;
+
+    const countAllEl = document.getElementById('count-all');
+    if (countAllEl) countAllEl.textContent = total;
+
+    const countPhotosEl = document.getElementById('count-photos');
+    if (countPhotosEl) countPhotosEl.textContent = withPhotos;
+
+    const headerSub = document.getElementById('header-subtitle');
+    if (headerSub) {
+      headerSub.textContent = `${total} ${total === 1 ? 'nota salvata' : 'note salvate'}`;
+    }
+  }
+
+  renderNotesList() {
+    const grid = document.getElementById('notes-grid');
+    const emptyState = document.getElementById('empty-state');
+    const filterStatusBar = document.getElementById('filter-status-bar');
+    const filterStatusText = document.getElementById('filter-status-text');
+
+    this.updateCounters();
+
+    const filtered = this.getFilteredNotes();
+
+    // Aggiorna filter status bar
+    if (this.currentFilter !== 'all' || this.searchQuery) {
+      filterStatusBar?.classList.remove('hidden');
+      let statusDesc = `Filtro: ${filtered.length} ${filtered.length === 1 ? 'risultato trovato' : 'risultati trovati'}`;
+      if (this.searchQuery) statusDesc += ` per "${this.searchQuery}"`;
+      if (this.currentFilter === 'photos') statusDesc += ` (solo note con foto)`;
+      if (this.currentFilter.startsWith('day:')) statusDesc += ` (data: ${this.currentFilter.replace('day:', '')})`;
+      if (filterStatusText) filterStatusText.textContent = statusDesc;
+    } else {
+      filterStatusBar?.classList.add('hidden');
+    }
+
+    if (filtered.length === 0) {
+      if (grid) grid.innerHTML = '';
+      emptyState?.classList.remove('hidden');
+      return;
+    }
+
+    emptyState?.classList.add('hidden');
+
+    if (!grid) return;
+
+    grid.innerHTML = filtered.map(note => {
+      const dateObj = new Date(note.date);
+      const formattedDate = formatItalianDate(dateObj);
+      const hasPhotos = note.photos && note.photos.length > 0;
+      const photosCount = hasPhotos ? note.photos.length : 0;
+
+      // Snippet del contenuto
+      const previewText = (note.content || '').replace(/\n+/g, ' ').trim() || 'Nessun testo';
+
+      // Badge Foto
+      const photoBadgeHtml = hasPhotos 
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 border border-pink-200 dark:border-pink-900/60 shadow-sm" title="${photosCount} Fotografia/e allegata/e">
+             <i data-lucide="camera" class="w-3 h-3 text-pink-600 dark:text-pink-400"></i>
+             <span>${photosCount > 1 ? photosCount : ''} Foto</span>
+           </span>`
+        : '';
+
+      // Badge Meteo
+      const weatherBadgeHtml = note.weather
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
+             <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i>
+             <span>${note.weather}</span>
+           </span>`
+        : '';
+
+      // Badge Luogo
+      const locationBadgeHtml = note.location
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 max-w-[150px] truncate" title="${note.location}">
+             <i data-lucide="map-pin" class="w-3 h-3 text-emerald-500 shrink-0"></i>
+             <span class="truncate">${note.location}</span>
+           </span>`
+        : '';
+
+      // Badge Cartella
+      const folderBadgeHtml = note.folder
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/50">
+             <i data-lucide="folder" class="w-3 h-3 text-indigo-500"></i>
+             <span>${note.folder}</span>
+           </span>`
+        : '';
+
+      // Prima miniatura foto (se presente)
+      const thumbnailHtml = (hasPhotos && note.photos[0])
+        ? `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-inner relative group" onclick="event.stopPropagation(); app.openImageViewer('${note.photos[0]}')">
+             <img src="${note.photos[0]}" alt="Foto Nota" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
+             ${photosCount > 1 ? `<span class="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">+${photosCount - 1}</span>` : ''}
+           </div>`
+        : '';
+
+      return `
+        <article 
+          onclick="app.openEditor('${note.id}')"
+          class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
+        >
+          <div>
+            <!-- Header Card: Data + Badges -->
+            <div class="flex items-start justify-between gap-2 mb-1.5 flex-wrap">
+              <span class="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                <span>${formattedDate}</span>
+              </span>
+              <div class="flex items-center gap-1 flex-wrap">
+                ${photoBadgeHtml}
+                ${weatherBadgeHtml}
+              </div>
+            </div>
+
+            <!-- Main Title & Photo Thumbnail Layout -->
+            <div class="flex gap-3 items-start">
+              <div class="flex-1 min-w-0">
+                <h3 class="font-bold text-base text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-snug line-clamp-2">
+                  ${escapeHtml(note.title || 'Senza Titolo')}
+                </h3>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-3 leading-relaxed">
+                  ${escapeHtml(previewText)}
+                </p>
+              </div>
+              ${thumbnailHtml}
+            </div>
+          </div>
+
+          <!-- Footer Card: Metadati e Azioni Veloci -->
+          <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-1.5 flex-wrap max-w-[70%]">
+              ${locationBadgeHtml}
+              ${folderBadgeHtml}
+            </div>
+
+            <div class="flex items-center gap-1 shrink-0">
+              <button 
+                onclick="event.stopPropagation(); app.shareNote('${note.id}')" 
+                class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors" 
+                title="Copia / Condividi testo"
+              >
+                <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+              </button>
+              <button 
+                onclick="event.stopPropagation(); app.confirmDeleteNote('${note.id}')" 
+                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors" 
+                title="Elimina"
+              >
+                <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // --- CALENDARIO MENSILE ---
+  renderCalendar() {
+    const monthYearEl = document.getElementById('cal-month-year');
+    const notesCountEl = document.getElementById('cal-notes-count');
+    const gridEl = document.getElementById('cal-days-grid');
+
+    const year = this.calendarDate.getFullYear();
+    const month = this.calendarDate.getMonth();
+
+    if (monthYearEl) {
+      monthYearEl.textContent = `${ITALIAN_MONTHS[month]} ${year}`;
+    }
+
+    // Raccogliamo le note di questo mese indicizzate per giorno (1..31)
+    const notesByDay = {};
+    let monthTotalNotes = 0;
+
+    for (const note of this.notes) {
+      const d = new Date(note.date);
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        const dayNum = d.getDate();
+        if (!notesByDay[dayNum]) notesByDay[dayNum] = [];
+        notesByDay[dayNum].push(note);
+        monthTotalNotes++;
+      }
+    }
+
+    if (notesCountEl) {
+      notesCountEl.textContent = `${monthTotalNotes} ${monthTotalNotes === 1 ? 'nota' : 'note'} in questo mese`;
+    }
+
+    if (!gridEl) return;
+
+    // Calcolo giorni del mese
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0 = Dom, 1 = Lun...
+    // In Italia la settimana inizia di Lunedì (0 = Lun ... 6 = Dom)
+    const startingBlankDays = (firstDayIndex + 6) % 7;
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+    let gridHtml = '';
+
+    // Celle vuote prima del primo giorno
+    for (let i = 0; i < startingBlankDays; i++) {
+      gridHtml += `<div class="cal-day-cell rounded-xl p-1 text-slate-300 dark:text-slate-700 flex flex-col items-center justify-center"></div>`;
+    }
+
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+    const currentTodayDate = today.getDate();
+
+    for (let day = 1; day <= totalDaysInMonth; day++) {
+      const dayNotes = notesByDay[day] || [];
+      const hasNotes = dayNotes.length > 0;
+      const hasPhotos = dayNotes.some(n => n.photos && n.photos.length > 0);
+      const isToday = isCurrentMonth && day === currentTodayDate;
+
+      const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isSelected = this.selectedCalendarDay === dateKey;
+
+      let cellClass = 'cal-day-cell rounded-xl p-1 flex flex-col items-center justify-between cursor-pointer border transition-all text-xs font-semibold relative ';
+      
+      if (isSelected) {
+        cellClass += 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/30 ';
+      } else if (isToday) {
+        cellClass += 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 ';
+      } else if (hasNotes) {
+        cellClass += 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-white border-slate-300 dark:border-slate-700 hover:bg-blue-100 dark:hover:bg-slate-700 ';
+      } else {
+        cellClass += 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/50 ';
+      }
+
+      // Indicator Dots / Badges
+      let dotsHtml = '<div class="flex items-center gap-0.5 mt-0.5">';
+      if (hasNotes) {
+        dotsHtml += `<span class="cal-dot ${isSelected ? 'bg-white' : 'bg-blue-600'}"></span>`;
+      }
+      if (hasPhotos) {
+        dotsHtml += `<span class="cal-dot ${isSelected ? 'bg-pink-300' : 'bg-pink-500'}"></span>`;
+      }
+      dotsHtml += '</div>';
+
+      gridHtml += `
+        <div class="${cellClass}" onclick="app.selectCalendarDay('${dateKey}', ${day})">
+          <span class="text-[13px] leading-tight">${day}</span>
+          ${dotsHtml}
+          ${hasNotes && dayNotes.length > 1 ? `<span class="text-[9px] leading-none opacity-80">${dayNotes.length}</span>` : ''}
+        </div>
+      `;
+    }
+
+    gridEl.innerHTML = gridHtml;
+
+    // Se nessun giorno è selezionato, seleziona oggi (o il primo giorno con note)
+    if (!this.selectedCalendarDay) {
+      if (isCurrentMonth) {
+        const todayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(currentTodayDate).padStart(2, '0')}`;
+        this.selectCalendarDay(todayKey, currentTodayDate, false);
+      } else if (Object.keys(notesByDay).length > 0) {
+        const firstDayWithNotes = parseInt(Object.keys(notesByDay)[0], 10);
+        const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(firstDayWithNotes).padStart(2, '0')}`;
+        this.selectCalendarDay(dayKey, firstDayWithNotes, false);
+      } else {
+        this.renderSelectedDayNotes([]);
+      }
+    } else {
+      this.renderSelectedDayNotes(this.getNotesForDayKey(this.selectedCalendarDay));
+    }
+  }
+
+  prevCalendarMonth() {
+    this.calendarDate.setMonth(this.calendarDate.getMonth() - 1);
+    this.selectedCalendarDay = null;
+    this.renderCalendar();
+  }
+
+  nextCalendarMonth() {
+    this.calendarDate.setMonth(this.calendarDate.getMonth() + 1);
+    this.selectedCalendarDay = null;
+    this.renderCalendar();
+  }
+
+  goCalendarToday() {
+    this.calendarDate = new Date();
+    this.selectedCalendarDay = null;
+    this.renderCalendar();
+  }
+
+  selectCalendarDay(dateKey, dayNum, reRenderCal = true) {
+    this.selectedCalendarDay = dateKey;
+    if (reRenderCal) {
+      this.renderCalendar();
+    }
+    const dayNotes = this.getNotesForDayKey(dateKey);
+    this.renderSelectedDayNotes(dayNotes, dateKey);
+  }
+
+  getNotesForDayKey(dateKey) {
+    if (!dateKey) return [];
+    return this.notes.filter(n => {
+      const d = new Date(n.date);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return k === dateKey;
+    });
+  }
+
+  renderSelectedDayNotes(dayNotes, dateKey = null) {
+    const titleEl = document.getElementById('cal-selected-day-title');
+    const containerEl = document.getElementById('cal-selected-day-notes');
+    const addBtn = document.getElementById('cal-add-day-btn');
+
+    if (dateKey && titleEl) {
+      const [y, m, d] = dateKey.split('-');
+      const dObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+      titleEl.textContent = `Note di ${formatItalianDate(dObj, false)} (${dayNotes.length})`;
+    }
+
+    if (!containerEl) return;
+
+    if (dayNotes.length === 0) {
+      containerEl.innerHTML = `
+        <div class="col-span-full py-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+          <p class="text-xs">Nessuna nota inserita per questa data.</p>
+          <button onclick="app.openEditorForSelectedDate()" class="mt-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">
+            + Crea una nota per questo giorno
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    containerEl.innerHTML = dayNotes.map(n => {
+      const d = new Date(n.date);
+      const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const hasPhotos = n.photos && n.photos.length > 0;
+
+      return `
+        <div onclick="app.openEditor('${n.id}')" class="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-blue-400 cursor-pointer flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400 mb-0.5">
+              <span>${timeStr}</span>
+              ${hasPhotos ? `<span class="text-pink-500 text-[11px] font-bold flex items-center gap-0.5"><i data-lucide="camera" class="w-3 h-3"></i> ${n.photos.length}</span>` : ''}
+              ${n.weather ? `<span class="text-amber-500 text-[11px] font-medium">${n.weather}</span>` : ''}
+            </div>
+            <h4 class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(n.title || 'Senza Titolo')}</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">${escapeHtml(n.content || '')}</p>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  openEditorForSelectedDate() {
+    let customDate = new Date();
+    if (this.selectedCalendarDay) {
+      const [y, m, d] = this.selectedCalendarDay.split('-');
+      customDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), new Date().getHours(), new Date().getMinutes());
+    }
+    this.openEditor(null, customDate);
+  }
+
+  // --- STATISTICHE ---
+  renderStats() {
+    const totalNotes = this.notes.length;
+    const withPhotos = this.notes.filter(n => n.photos && n.photos.length > 0).length;
+    const pctPhotos = totalNotes > 0 ? Math.round((withPhotos / totalNotes) * 100) : 0;
+
+    // Conteggio parole
+    let totalWords = 0;
+    const locationsMap = {};
+    const foldersMap = {};
+    const yearsMap = {};
+    let tempSum = 0;
+    let tempCount = 0;
+
+    for (const n of this.notes) {
+      const text = `${n.title || ''} ${n.content || ''}`.trim();
+      const words = text ? text.split(/\s+/).length : 0;
+      totalWords += words;
+
+      // Luogo
+      if (n.location) {
+        const loc = n.location.trim();
+        locationsMap[loc] = (locationsMap[loc] || 0) + 1;
+      }
+
+      // Cartella
+      if (n.folder) {
+        const f = n.folder.trim();
+        foldersMap[f] = (foldersMap[f] || 0) + 1;
+      }
+
+      // Anno
+      const d = new Date(n.date);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        yearsMap[y] = (yearsMap[y] || 0) + 1;
+      }
+
+      // Meteo
+      if (n.weather) {
+        const tMatch = n.weather.match(/(-?\d+(?:\.\d+)?)\s*°?C/i);
+        if (tMatch) {
+          tempSum += parseFloat(tMatch[1]);
+          tempCount++;
+        }
+      }
+    }
+
+    const avgWords = totalNotes > 0 ? Math.round(totalWords / totalNotes) : 0;
+    const avgTemp = tempCount > 0 ? (tempSum / tempCount).toFixed(1) + '°C' : 'N/D';
+
+    // Aggiorna KPI DOM
+    document.getElementById('stat-total-notes').textContent = totalNotes;
+    document.getElementById('stat-photos-notes').textContent = withPhotos;
+    document.getElementById('stat-photos-pct').textContent = `${pctPhotos}% delle note`;
+    document.getElementById('stat-total-words').textContent = totalWords.toLocaleString('it-IT');
+    document.getElementById('stat-avg-words').textContent = `Media: ${avgWords} parole/nota`;
+    document.getElementById('stat-locations-count').textContent = Object.keys(locationsMap).length;
+    document.getElementById('stat-avg-temp').textContent = tempCount > 0 ? `Temp. media: ${avgTemp}` : 'Nessun dato meteo';
+
+    // Ripartizione Anni
+    const yearsContainer = document.getElementById('stat-years-breakdown');
+    if (yearsContainer) {
+      const sortedYears = Object.keys(yearsMap).sort((a, b) => b - a);
+      const maxYearCount = Math.max(1, ...Object.values(yearsMap));
+
+      if (sortedYears.length === 0) {
+        yearsContainer.innerHTML = `<p class="text-xs text-slate-400">Nessuna statistica disponibile.</p>`;
+      } else {
+        yearsContainer.innerHTML = sortedYears.map(y => {
+          const count = yearsMap[y];
+          const pct = Math.round((count / maxYearCount) * 100);
+          return `
+            <div>
+              <div class="flex justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <span>Anno ${y}</span>
+                <span class="text-blue-600 dark:text-blue-400 font-bold">${count} note</span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Top Luoghi
+    const locContainer = document.getElementById('stat-locations-list');
+    if (locContainer) {
+      const topLocations = Object.entries(locationsMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      if (topLocations.length === 0) {
+        locContainer.innerHTML = `<p class="text-xs text-slate-400 italic">Nessun luogo registrato nelle note.</p>`;
+      } else {
+        locContainer.innerHTML = topLocations.map(([loc, cnt]) => `
+          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl">
+            <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate pr-2 flex items-center gap-1.5">
+              <i data-lucide="map-pin" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
+              <span class="truncate">${escapeHtml(loc)}</span>
+            </span>
+            <span class="text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full shrink-0">
+              ${cnt} ${cnt === 1 ? 'nota' : 'note'}
+            </span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Top Cartelle
+    const folderContainer = document.getElementById('stat-folders-list');
+    if (folderContainer) {
+      const topFolders = Object.entries(foldersMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      if (topFolders.length === 0) {
+        folderContainer.innerHTML = `<p class="text-xs text-slate-400 italic">Nessuna cartella o categoria specificata.</p>`;
+      } else {
+        folderContainer.innerHTML = topFolders.map(([f, cnt]) => `
+          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl">
+            <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate pr-2 flex items-center gap-1.5">
+              <i data-lucide="folder" class="w-3.5 h-3.5 text-indigo-500 shrink-0"></i>
+              <span class="truncate">${escapeHtml(f)}</span>
+            </span>
+            <span class="text-xs font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full shrink-0">
+              ${cnt} ${cnt === 1 ? 'nota' : 'note'}
+            </span>
+          </div>
+        `).join('');
+      }
+    }
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // --- EDITOR NOTA ---
+  openEditor(noteId = null, defaultDate = null) {
+    this.editingNoteId = noteId;
+    this.editorPhotos = [];
+
+    const modal = document.getElementById('editor-modal');
+    const titleInput = document.getElementById('editor-title');
+    const contentInput = document.getElementById('editor-content');
+    const dateInput = document.getElementById('editor-datetime-input');
+    const weatherInput = document.getElementById('editor-weather');
+    const locationInput = document.getElementById('editor-location');
+    const folderInput = document.getElementById('editor-folder');
+    const deleteBtn = document.getElementById('editor-delete-btn');
+
+    if (noteId) {
+      // Modifica nota esistente
+      const note = this.notes.find(n => n.id === noteId);
+      if (note) {
+        if (titleInput) titleInput.value = note.title || '';
+        if (contentInput) contentInput.value = note.content || '';
+        if (dateInput) dateInput.value = toDatetimeLocalValue(new Date(note.date));
+        if (weatherInput) weatherInput.value = note.weather || '';
+        if (locationInput) locationInput.value = note.location || '';
+        if (folderInput) folderInput.value = note.folder || '';
+        this.editorPhotos = note.photos ? [...note.photos] : [];
+        deleteBtn?.classList.remove('hidden');
+      }
+    } else {
+      // Nuova nota
+      const initialDate = defaultDate || new Date();
+      if (titleInput) titleInput.value = '';
+      if (contentInput) contentInput.value = '';
+      if (dateInput) dateInput.value = toDatetimeLocalValue(initialDate);
+      if (weatherInput) weatherInput.value = '';
+      if (locationInput) locationInput.value = '';
+      if (folderInput) folderInput.value = '';
+      deleteBtn?.classList.add('hidden');
+
+      // Rilevamento automatico della posizione (GPS / Cella / Wi-Fi) e del meteo corrente
+      this.detectCurrentLocationAndWeather();
+    }
+
+    this.renderEditorPhotos();
+    this.onEditorContentChange();
+
+    modal?.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    // Focus automatico sul titolo per nuove note
+    setTimeout(() => {
+      if (!noteId) titleInput?.focus();
+    }, 100);
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // --- RILEVAMENTO POSIZIONE GPS / CELLA / WI-FI & METEO ---
+  async detectCurrentLocationAndWeather(force = false) {
+    const locationInput = document.getElementById('editor-location');
+    const weatherInput = document.getElementById('editor-weather');
+    const spinner = document.getElementById('location-spinner');
+
+    if (!force && locationInput && locationInput.value.trim() !== '') {
+      return;
+    }
+
+    if (spinner) spinner.classList.remove('hidden');
+
+    // 1. Prova Geolocation API (GPS su Android/cellulare, o Wi-Fi / Cella)
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          await this.fetchAddressAndWeather(lat, lon);
+          if (spinner) spinner.classList.add('hidden');
+        },
+        async (err) => {
+          console.warn('GPS/Wi-Fi positioning error or permission denied, fallback to IP network:', err);
+          await this.fetchLocationFromIp();
+          if (spinner) spinner.classList.add('hidden');
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+      );
+    } else {
+      await this.fetchLocationFromIp();
+      if (spinner) spinner.classList.add('hidden');
+    }
+  }
+
+  async fetchAddressAndWeather(lat, lon) {
+    const locationInput = document.getElementById('editor-location');
+    const weatherInput = document.getElementById('editor-weather');
+
+    // Reverse Geocoding via OpenStreetMap Nominatim
+    try {
+      const geoUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+      const response = await fetch(geoUrl, {
+        headers: { 'Accept-Language': 'it,en' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const addr = data.address || {};
+        const road = addr.road || addr.pedestrian || addr.street || '';
+        const houseNum = addr.house_number ? ' ' + addr.house_number : '';
+        const city = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || '';
+        const province = addr.county || addr.state_district || addr.state || '';
+        const country = addr.country || '';
+
+        const parts = [];
+        if (road) parts.push(road + houseNum);
+        if (city) {
+          parts.push(city + (province && province !== city ? ` (${province})` : ''));
+        }
+        if (country) parts.push(country);
+
+        const formattedAddress = parts.join(', ') || data.display_name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        if (locationInput && (!locationInput.value || locationInput.value === '')) {
+          locationInput.value = formattedAddress;
+        }
+      }
+    } catch (e) {
+      console.warn('Errore reverse geocoding OSM:', e);
+      if (locationInput && !locationInput.value) {
+        locationInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+      }
+    }
+
+    // Meteo in tempo reale via Open-Meteo API
+    try {
+      const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+      const wRes = await fetch(weatherUrl);
+      if (wRes.ok) {
+        const wData = await wRes.json();
+        const cur = wData.current_weather;
+        if (cur) {
+          const temp = cur.temperature;
+          const code = cur.weathercode;
+          const conditionDesc = this.getWeatherDescription(code);
+          const weatherFormatted = `${temp.toFixed(1)}°C ${conditionDesc}`.trim();
+          if (weatherInput && (!weatherInput.value || weatherInput.value === '')) {
+            weatherInput.value = weatherFormatted;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Errore fetch meteo:', e);
+    }
+  }
+
+  async fetchLocationFromIp() {
+    const locationInput = document.getElementById('editor-location');
+    try {
+      const ipRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
+      if (ipRes.ok) {
+        const ipData = await ipRes.json();
+        const city = ipData.city || '';
+        const region = ipData.region || '';
+        const country = ipData.country || '';
+        const lat = parseFloat(ipData.latitude);
+        const lon = parseFloat(ipData.longitude);
+
+        const parts = [city, region, country].filter(Boolean);
+        const ipLoc = parts.join(', ');
+        if (locationInput && !locationInput.value) {
+          locationInput.value = ipLoc;
+        }
+
+        if (!isNaN(lat) && !isNaN(lon)) {
+          await this.fetchAddressAndWeather(lat, lon);
+        }
+      }
+    } catch (e) {
+      console.warn('Errore fallback geolocalizzazione IP:', e);
+    }
+  }
+
+  getWeatherDescription(code) {
+    const weatherCodes = {
+      0: 'Sereno',
+      1: 'Prevalentemente Sereno',
+      2: 'Poco Nuvoloso',
+      3: 'Coperto',
+      45: 'Nebbia',
+      48: 'Nebbia con brina',
+      51: 'Pioggerella leggera',
+      53: 'Pioggerella',
+      55: 'Pioggia fitta',
+      61: 'Pioggia debole',
+      63: 'Pioggia moderata',
+      65: 'Pioggia forte',
+      71: 'Neve debole',
+      73: 'Neve moderata',
+      75: 'Neve intensa',
+      80: 'Rovescio leggero',
+      81: 'Rovescio moderato',
+      82: 'Nubifragio',
+      95: 'Temporale',
+      96: 'Temporale con grandine',
+      99: 'Forte temporale con grandine'
+    };
+    return weatherCodes[code] || '';
+  }
+
+  closeEditor() {
+    const modal = document.getElementById('editor-modal');
+    modal?.classList.add('hidden');
+    document.body.style.overflow = '';
+    this.editingNoteId = null;
+    this.editorPhotos = [];
+  }
+
+  onEditorContentChange() {
+    const content = document.getElementById('editor-content')?.value || '';
+    const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+    const wordCountEl = document.getElementById('editor-word-count');
+    if (wordCountEl) {
+      wordCountEl.textContent = `${words} ${words === 1 ? 'parola' : 'parole'}`;
+    }
+  }
+
+  toggleMetaAccordion() {
+    const content = document.getElementById('meta-accordion-content');
+    const icon = document.getElementById('meta-accordion-icon');
+    if (content) {
+      const isHidden = content.classList.toggle('hidden');
+      if (icon) {
+        icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+      }
+    }
+  }
+
+  insertEditorFormat(type) {
+    const textarea = document.getElementById('editor-content');
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.substring(start, end);
+
+    let replacement = '';
+    if (type === 'bold') {
+      replacement = `**${selected || 'testo'}**`;
+    } else if (type === 'italic') {
+      replacement = `*${selected || 'testo'}*`;
+    } else if (type === 'list') {
+      replacement = `\n- ${selected || 'elemento'}`;
+    } else if (type === 'check') {
+      replacement = `\n[ ] ${selected || 'attività'}`;
+    } else if (type === 'divider') {
+      replacement = `\n------------------------------------------------------------------------------------------------\n`;
+    } else if (type === 'time') {
+      const now = new Date();
+      replacement = ` [${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}] `;
+    }
+
+    textarea.setRangeText(replacement, start, end, 'end');
+    textarea.focus();
+    this.onEditorContentChange();
+  }
+
+  // --- GESTIONE FOTOGRAFIE NELL'EDITOR ---
+  async handlePhotoUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+
+      try {
+        const base64 = await this.resizeAndEncodeImage(file);
+        this.editorPhotos.push(base64);
+      } catch (err) {
+        console.error('Errore caricamento immagine:', err);
+        this.showToast('Errore nel caricamento della foto', 'error');
+      }
+    }
+
+    this.renderEditorPhotos();
+    event.target.value = '';
+  }
+
+  resizeAndEncodeImage(file, maxDimension = 1400, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  renderEditorPhotos() {
+    const container = document.getElementById('editor-photos-container');
+    const grid = document.getElementById('editor-photos-grid');
+    const countEl = document.getElementById('editor-photos-count');
+
+    if (this.editorPhotos.length === 0) {
+      container?.classList.add('hidden');
+      return;
+    }
+
+    container?.classList.remove('hidden');
+    if (countEl) countEl.textContent = this.editorPhotos.length;
+
+    if (!grid) return;
+
+    grid.innerHTML = this.editorPhotos.map((photoBase64, idx) => `
+      <div class="relative group aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+        <img src="${photoBase64}" alt="Foto ${idx + 1}" class="w-full h-full object-cover cursor-pointer" onclick="app.openImageViewer('${photoBase64}')">
+        <button 
+          type="button" 
+          onclick="app.removeEditorPhoto(${idx})" 
+          class="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full shadow-md hover:bg-red-700 transition-colors"
+          title="Rimuovi foto"
+        >
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `).join('');
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  removeEditorPhoto(index) {
+    this.editorPhotos.splice(index, 1);
+    this.renderEditorPhotos();
+  }
+
+  // --- SALVATAGGIO NOTA ---
+  async saveNote() {
+    const titleInput = document.getElementById('editor-title');
+    const contentInput = document.getElementById('editor-content');
+    const dateInput = document.getElementById('editor-datetime-input');
+    const weatherInput = document.getElementById('editor-weather');
+    const locationInput = document.getElementById('editor-location');
+    const folderInput = document.getElementById('editor-folder');
+
+    const title = titleInput?.value.trim() || 'Senza Titolo';
+    const content = contentInput?.value.trim() || '';
+    const dateVal = dateInput?.value ? new Date(dateInput.value) : new Date();
+    const weather = weatherInput?.value.trim() || '';
+    const location = locationInput?.value.trim() || '';
+    const folder = folderInput?.value.trim() || '';
+
+    if (!content && title === 'Senza Titolo') {
+      this.showToast('Inserisci almeno un titolo o del testo per salvare la nota.', 'error');
+      return;
+    }
+
+    const noteObj = {
+      id: this.editingNoteId || 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      title: title,
+      content: content,
+      date: dateVal.toISOString(),
+      weather: weather,
+      location: location,
+      folder: folder,
+      tags: [],
+      photos: [...this.editorPhotos],
+      pinned: false,
+      createdAt: this.editingNoteId ? (this.notes.find(n => n.id === this.editingNoteId)?.createdAt || dateVal.toISOString()) : dateVal.toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      this.setCloudStatus('syncing', 'Salvataggio...');
+      await this.db.put(noteObj);
+      await this.firebase.saveNote(noteObj);
+      await this.loadNotes();
+      this.render();
+      this.updateStorageStats();
+      this.closeEditor();
+      this.setCloudStatus('online', 'Sincronizzato');
+      this.showToast('Nota salvata con successo!', 'success');
+    } catch (err) {
+      console.error('Errore salvataggio nota:', err);
+      this.showToast('Errore durante il salvataggio della nota', 'error');
+    }
+  }
+
+  // --- ELIMINAZIONE NOTA ---
+  confirmDeleteNote(id) {
+    const note = this.notes.find(n => n.id === id);
+    this.openConfirmModal(
+      'Elimina Nota',
+      `Sei sicuro di voler eliminare la nota "${note?.title || 'selezionata'}"? L'azione non può essere annullata.`,
+      async () => {
+        try {
+          this.setCloudStatus('syncing', 'Eliminazione...');
+          await this.db.delete(id);
+          await this.firebase.deleteNote(id);
+          await this.loadNotes();
+          this.render();
+          this.updateStorageStats();
+          this.setCloudStatus('online', 'Sincronizzato');
+          this.showToast('Nota eliminata', 'info');
+        } catch (e) {
+          console.error(e);
+          this.showToast('Errore eliminazione nota', 'error');
+        }
+      }
+    );
+  }
+
+  deleteCurrentNote() {
+    if (this.editingNoteId) {
+      this.closeEditor();
+      this.confirmDeleteNote(this.editingNoteId);
+    }
+  }
+
+  // --- CONDIVISIONE NOTA ---
+  shareNote(id) {
+    const note = this.notes.find(n => n.id === id);
+    if (!note) return;
+
+    const fullText = `${note.title ? `::: ${note.title} :::\n\n` : ''}${note.content || ''}${note.weather ? `\n\nMeteo: ${note.weather}` : ''}${note.location ? `\nLuogo: ${note.location}` : ''}`;
+
+    if (navigator.share) {
+      navigator.share({
+        title: note.title || 'Nota',
+        text: fullText
+      }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(fullText).then(() => {
+        this.showToast('Testo della nota copiato negli appunti!', 'success');
+      });
+    }
+  }
+
+  // --- ANTEPRIMA IMMAGINE FULLSCREEN ---
+  openImageViewer(src) {
+    const modal = document.getElementById('image-viewer-modal');
+    const img = document.getElementById('image-viewer-img');
+    if (modal && img) {
+      img.src = src;
+      modal.classList.remove('hidden');
+    }
+  }
+
+  closeImageViewer() {
+    const modal = document.getElementById('image-viewer-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  // --- IMPORT / EXPORT FUNZIONI ---
+  async handleDiaroFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        const parsedNotes = parseDiaroExportText(text);
+
+        if (parsedNotes.length === 0) {
+          this.showToast('Nessuna nota trovata nel file .TXT.', 'error');
+          return;
+        }
+
+        this.openConfirmModal(
+          'Importa da Diaro',
+          `Sono state trovate ${parsedNotes.length} note nel file. Vuoi importarle nel tuo archivio?`,
+          async () => {
+            this.setCloudStatus('syncing', 'Importazione...');
+            await this.db.putBatch(parsedNotes);
+            await this.firebase.saveBatch(parsedNotes);
+            await this.loadNotes();
+            this.render();
+            this.updateStorageStats();
+            this.setCloudStatus('online', 'Sincronizzato');
+            this.showToast(`Importate con successo ${parsedNotes.length} note!`, 'success');
+            this.switchView('notes');
+          }
+        );
+      } catch (err) {
+        console.error('Errore import Diaro:', err);
+        this.showToast('Errore durante la lettura del file Diaro .TXT', 'error');
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = '';
+  }
+
+  async importSampleDiaroDirectly() {
+    try {
+      const response = await fetch('sample-diaro.txt');
+      let text = '';
+      if (response.ok) {
+        text = await response.text();
+      } else {
+        // Fallback a campione integrato se fetch locale fallisce
+        text = `12 Agosto 2026, Mercoledì 10:16\n\n::: MADRID :::\n\nhttps://maps.app.goo.gl/DZ8JAuinXzzR7KgD9\n\nMeteo: 28.1°C\n\n------------------------------------------------------------------------------------------------\n\n10 Agosto 2026, Lunedì 10:34\n\n::: IFA :::\n\n2.2 / 185  worldplug nuovo modello\n3.2 – 127  PROOVE   (Mike)\n11.2-111  Glary star (Jessica) bluetooth speakers con batteria rem\n\nMeteo: 28.1°C\n\n------------------------------------------------------------------------------------------------\n\n05 Agosto 2026, Mercoledì 16:00\n\n::: Stelle fotografate DWARF 3 :::\n\nC_20\nIC_4604\nM_31\nM_33\nM_51\nM_57\nM_63\nMoon\nNGC_7380\nNGC_281\nUGC_8837\n\nMeteo: 36.2°C\n\n------------------------------------------------------------------------------------------------\n\n22 Luglio 2026, Mercoledì 08:34\n\n::: Prompt Antigravity - Schede e preventivi :::\n\nCrea un'applicazione web completa per la generazione di schede prodotto in formato PDF a partire dal sito ufficiale di Karma Italiana.\n\nMeteo: 28.5°C`;
+      }
+
+      const parsedNotes = parseDiaroExportText(text);
+      if (parsedNotes.length > 0) {
+        this.setCloudStatus('syncing', 'Sincronizzazione...');
+        await this.db.putBatch(parsedNotes);
+        await this.firebase.saveBatch(parsedNotes);
+        await this.loadNotes();
+        this.render();
+        this.updateStorageStats();
+        this.setCloudStatus('online', 'Sincronizzato');
+        this.showToast(`Caricate ${parsedNotes.length} note di esempio con successo!`, 'success');
+        this.switchView('notes');
+      }
+    } catch (e) {
+      console.error(e);
+      this.showToast('Errore caricamento file di esempio', 'error');
+    }
+  }
+
+  exportDiaroTxt() {
+    if (this.notes.length === 0) {
+      this.showToast('Nessuna nota da esportare.', 'info');
+      return;
+    }
+    const txtContent = generateDiaroTxt(this.notes);
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `diaro-export-${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast('File Diaro .TXT esportato con successo!', 'success');
+  }
+
+  exportJsonBackup() {
+    if (this.notes.length === 0) {
+      this.showToast('Nessuna nota da esportare.', 'info');
+      return;
+    }
+    const exportData = {
+      app: 'NoteDiarioApp',
+      version: '2.0',
+      exportDate: new Date().toISOString(),
+      totalNotes: this.notes.length,
+      notes: this.notes
+    };
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `backup-note-completo-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast('Backup JSON completo scaricato!', 'success');
+  }
+
+  handleJsonBackupImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        const importedNotes = data.notes || data;
+        if (!Array.isArray(importedNotes) || importedNotes.length === 0) {
+          this.showToast('File JSON non valido o vuoto.', 'error');
+          return;
+        }
+
+        this.openConfirmModal(
+          'Ripristina Backup JSON',
+          `Il file contiene ${importedNotes.length} note. Vuoi importarle nel database?`,
+          async () => {
+            this.setCloudStatus('syncing', 'Sincronizzazione...');
+            await this.db.putBatch(importedNotes);
+            await this.firebase.saveBatch(importedNotes);
+            await this.loadNotes();
+            this.render();
+            this.updateStorageStats();
+            this.setCloudStatus('online', 'Sincronizzato');
+            this.showToast(`Ripristinate con successo ${importedNotes.length} note!`, 'success');
+            this.switchView('notes');
+          }
+        );
+      } catch (err) {
+        console.error('Errore import JSON:', err);
+        this.showToast('Errore nella lettura del file JSON', 'error');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  confirmResetDatabase() {
+    this.openConfirmModal(
+      'Cancellare tutte le note?',
+      'Sei sicuro di voler eliminare DEFINITIVAMENTE tutte le note salvate? Ti consigliamo di esportare prima un backup.',
+      async () => {
+        this.setCloudStatus('syncing', 'Cancellazione...');
+        await this.firebase.clearAll(this.notes);
+        await this.db.clear();
+        await this.loadNotes();
+        this.render();
+        this.updateStorageStats();
+        this.setCloudStatus('online', 'Sincronizzato');
+        this.showToast('Tutte le note sono state eliminate.', 'info');
+      }
+    );
+  }
+
+  updateStorageStats() {
+    const badge = document.getElementById('storage-usage-badge');
+    if (badge) {
+      badge.textContent = `${this.notes.length} note archiviate`;
+    }
+  }
+
+  // --- MODALE CONFERMA GENERICA ---
+  openConfirmModal(title, message, onConfirmCallback) {
+    const modal = document.getElementById('confirm-modal');
+    const titleEl = document.getElementById('confirm-modal-title');
+    const descEl = document.getElementById('confirm-modal-desc');
+    const okBtn = document.getElementById('confirm-modal-ok-btn');
+
+    if (titleEl) titleEl.textContent = title;
+    if (descEl) descEl.textContent = message;
+
+    if (okBtn) {
+      okBtn.onclick = () => {
+        this.closeConfirmModal();
+        if (onConfirmCallback) onConfirmCallback();
+      };
+    }
+
+    modal?.classList.remove('hidden');
+  }
+
+  closeConfirmModal() {
+    const modal = document.getElementById('confirm-modal');
+    modal?.classList.add('hidden');
+  }
+
+  // --- NOTIFICHE TOAST ---
+  showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    let bg = 'bg-slate-900 text-white';
+    let icon = 'info';
+
+    if (type === 'success') {
+      bg = 'bg-emerald-600 text-white';
+      icon = 'check-circle';
+    } else if (type === 'error') {
+      bg = 'bg-red-600 text-white';
+      icon = 'alert-circle';
+    }
+
+    toast.className = `toast-msg p-3 px-4 rounded-xl shadow-lg flex items-center gap-2.5 text-xs font-semibold ${bg}`;
+    toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4 shrink-0"></i><span>${escapeHtml(message)}</span>`;
+
+    container.appendChild(toast);
+    if (window.lucide) lucide.createIcons();
+
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-10px)';
+      toast.style.transition = 'all 0.25s ease';
+      setTimeout(() => toast.remove(), 250);
+    }, 3200);
+  }
+
+  // --- EVENT LISTENERS ---
+  initEventListeners() {
+    // Scorciatoie da tastiera
+    window.addEventListener('keydown', (e) => {
+      // Escape chiude modali
+      if (e.key === 'Escape') {
+        this.closeEditor();
+        this.closeImageViewer();
+        this.closeConfirmModal();
+      }
+      // Ctrl+S o Cmd+S salva la nota se l'editor è aperto
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        const modal = document.getElementById('editor-modal');
+        if (modal && !modal.classList.contains('hidden')) {
+          e.preventDefault();
+          this.saveNote();
+        }
+      }
+    });
+
+    // Drag and Drop globale di file TXT e JSON
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      const name = file.name.toLowerCase();
+
+      if (name.endsWith('.json')) {
+        this.handleJsonBackupImport({ target: { files: [file], value: '' } });
+      } else if (name.endsWith('.txt')) {
+        this.handleDiaroFileImport({ target: { files: [file], value: '' } });
+      }
+    });
+
+    // Registrazione Service Worker per PWA Offline
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.log('SW registration note:', err);
+      });
+    }
+  }
+}
+
+// Utility escaping HTML
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Inizializzazione globale
+window.app = new AppController();
+document.addEventListener('DOMContentLoaded', () => {
+  window.app.init();
+});

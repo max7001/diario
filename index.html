@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="it" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Appunti & Note</title>
+  
+  <!-- PWA & Web App Meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Note App">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'><path d='M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2zm0-4H7V7h10v2z'/></svg>">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase App, Auth e Firestore SDKs (Compat v10) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none sm:select-auto pb-24 md:pb-8">
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 transition-colors">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-3">
+      
+      <!-- Brand & Titolo -->
+      <div class="flex items-center gap-2.5 cursor-pointer" onclick="app.switchView('notes')">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <i data-lucide="notebook-pen" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-lg leading-tight tracking-tight text-slate-900 dark:text-white">Note & Diario</h1>
+            <!-- Cloud Status Indicator -->
+            <span id="cloud-status-badge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50" title="Firebase Cloud Sync Attivo">
+              <span id="cloud-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span id="cloud-status-text">Cloud</span>
+            </span>
+          </div>
+          <p id="header-subtitle" class="text-xs text-slate-500 dark:text-slate-400 font-medium">I tuoi appunti personali</p>
+        </div>
+      </div>
+
+      <!-- Azioni Header Desktop/Tablet -->
+      <div class="flex items-center gap-2">
+        <!-- Switch Tema Chiaro/Scuro -->
+        <button id="theme-toggle-btn" class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Cambia tema" onclick="app.toggleTheme()">
+          <i data-lucide="sun" class="w-5 h-5 hidden dark:block text-amber-400"></i>
+          <i data-lucide="moon" class="w-5 h-5 block dark:hidden text-slate-600"></i>
+        </button>
+
+        <!-- Desktop Navigation Tabs -->
+        <div class="hidden md:flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1 text-sm font-medium">
+          <button onclick="app.switchView('notes')" id="nav-desktop-notes" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+            <span>Note</span>
+          </button>
+          <button onclick="app.switchView('calendar')" id="nav-desktop-calendar" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+            <span>Calendario</span>
+          </button>
+          <button onclick="app.switchView('stats')" id="nav-desktop-stats" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+            <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+            <span>Statistiche</span>
+          </button>
+          <button onclick="app.switchView('settings')" id="nav-desktop-settings" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            <span>Impostazioni</span>
+          </button>
+        </div>
+
+        <!-- Desktop Quick Add Button -->
+        <button onclick="app.openEditor()" class="hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition-all">
+          <i data-lucide="plus" class="w-4 h-4 stroke-[2.5]"></i>
+          <span>Nuova Nota</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6">
+
+    <!-- ================= VIEW 1: ELENCO NOTE (HOME) ================= -->
+    <section id="view-notes" class="fade-in space-y-4">
+      
+      <!-- Search Bar & Filters -->
+      <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        
+        <!-- Input Ricerca Full Text -->
+        <div class="relative flex items-center">
+          <i data-lucide="search" class="w-5 h-5 absolute left-3 text-slate-400"></i>
+          <input 
+            type="text" 
+            id="search-input" 
+            placeholder="Cerca per titolo, testo, luogo, meteo..." 
+            class="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 transition-all"
+            oninput="app.onSearchInput(this.value)"
+          >
+          <button id="search-clear-btn" class="hidden absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1" onclick="app.clearSearch()">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Chips & Filter Row -->
+        <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+          <!-- Filter Tags -->
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full no-scrollbar">
+            <button onclick="app.setFilter('all')" id="chip-filter-all" class="chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-blue-600 text-white shadow-sm">
+              Tutte (<span id="count-all">0</span>)
+            </button>
+            <button onclick="app.setFilter('photos')" id="chip-filter-photos" class="chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1">
+              <i data-lucide="camera" class="w-3.5 h-3.5 text-pink-500"></i>
+              <span>Con Foto (<span id="count-photos">0</span>)</span>
+            </button>
+            <button onclick="app.setFilter('recent')" id="chip-filter-recent" class="chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-500"></i>
+              <span>Ultimi 30 gg</span>
+            </button>
+          </div>
+
+          <!-- Sort & View Controls -->
+          <div class="flex items-center gap-2 ml-auto">
+            <select id="sort-select" onchange="app.changeSort(this.value)" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-1.5 px-2.5 rounded-lg text-xs font-medium border-0 focus:ring-1 focus:ring-blue-500 cursor-pointer">
+              <option value="date-desc">Data (Più recenti)</option>
+              <option value="date-asc">Data (Più vecchie)</option>
+              <option value="title-asc">Titolo (A-Z)</option>
+              <option value="title-desc">Titolo (Z-A)</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Info Bar / Risultati Filtrati -->
+      <div id="filter-status-bar" class="hidden flex items-center justify-between bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 px-3.5 py-2 rounded-xl text-xs text-blue-700 dark:text-blue-300">
+        <div class="flex items-center gap-2">
+          <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+          <span id="filter-status-text">Filtro attivo</span>
+        </div>
+        <button onclick="app.resetFilters()" class="font-bold underline hover:text-blue-900 dark:hover:text-blue-100">
+          Mostra tutte
+        </button>
+      </div>
+
+      <!-- Lista Note / Grid -->
+      <div id="notes-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <!-- Rendered dynamically via JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="empty-state" class="hidden py-16 px-4 text-center space-y-4">
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-blue-100 dark:bg-slate-800 flex items-center justify-center text-blue-600 dark:text-blue-400">
+          <i data-lucide="file-plus-2" class="w-8 h-8"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-base text-slate-800 dark:text-slate-200">Nessuna nota trovata</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">Inizia a scrivere toccando il pulsante "+" in basso, oppure importa le tue note da Diaro nelle Impostazioni.</p>
+        </div>
+        <div class="pt-2 flex justify-center gap-3">
+          <button onclick="app.openEditor()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md transition-all">
+            + Scrivi la prima nota
+          </button>
+          <button onclick="app.importSampleDiaroDirectly()" class="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium transition-all">
+            Carica Note Esempio
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= VIEW 2: CALENDARIO MENSILE ================= -->
+    <section id="view-calendar" class="hidden fade-in space-y-4">
+      
+      <!-- Calendar Card -->
+      <div class="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        
+        <!-- Header Mese / Anno con Navigazione -->
+        <div class="flex items-center justify-between">
+          <button onclick="app.prevCalendarMonth()" class="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors">
+            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+          </button>
+          <div class="text-center">
+            <h2 id="cal-month-year" class="font-bold text-lg text-slate-900 dark:text-white capitalize">Agosto 2026</h2>
+            <p id="cal-notes-count" class="text-xs text-blue-600 dark:text-blue-400 font-medium">12 note in questo mese</p>
+          </div>
+          <button onclick="app.nextCalendarMonth()" class="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors">
+            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Giorni della settimana -->
+        <div class="grid grid-cols-7 gap-1 text-center font-bold text-xs text-slate-400 dark:text-slate-500 py-1">
+          <div>LUN</div>
+          <div>MAR</div>
+          <div>MER</div>
+          <div>GIO</div>
+          <div>VEN</div>
+          <div>SAB</div>
+          <div>DOM</div>
+        </div>
+
+        <!-- Griglia Giorni Mese -->
+        <div id="cal-days-grid" class="grid grid-cols-7 gap-1 sm:gap-2">
+          <!-- Rendered dynamically via JS -->
+        </div>
+
+        <!-- Quick Today Button -->
+        <div class="pt-2 flex justify-between items-center text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+            <span>Giorno con note</span>
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-pink-500 ml-2"></span>
+            <span>Contiene foto</span>
+          </div>
+          <button onclick="app.goCalendarToday()" class="font-bold text-blue-600 dark:text-blue-400 hover:underline">
+            Oggi
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Note del giorno selezionato -->
+      <div id="cal-selected-day-container" class="space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <h3 id="cal-selected-day-title" class="font-bold text-sm text-slate-700 dark:text-slate-300">
+            Note del giorno selezionato
+          </h3>
+          <button id="cal-add-day-btn" onclick="app.openEditorForSelectedDate()" class="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>Aggiungi nota in questa data</span>
+          </button>
+        </div>
+        <div id="cal-selected-day-notes" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <!-- Selected Day Notes -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= VIEW 3: STATISTICHE ================= -->
+    <section id="view-stats" class="hidden fade-in space-y-4">
+      
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold text-xl text-slate-900 dark:text-white">Statistiche & Attività</h2>
+        <span class="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">Panoramica completa</span>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-blue-600 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Totale Note</span>
+            <i data-lucide="file-text" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-total-notes" class="text-2xl font-extrabold text-slate-900 dark:text-white">0</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Appunti salvati</div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-pink-500 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Note con Foto</span>
+            <i data-lucide="camera" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-photos-notes" class="text-2xl font-extrabold text-slate-900 dark:text-white">0</div>
+          <div id="stat-photos-pct" class="text-[11px] text-pink-500 font-medium mt-0.5">0% del totale</div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-emerald-500 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Parole Totali</span>
+            <i data-lucide="align-left" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-total-words" class="text-2xl font-extrabold text-slate-900 dark:text-white">0</div>
+          <div id="stat-avg-words" class="text-[11px] text-slate-400 mt-0.5">Media: 0 parole</div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-amber-500 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Località / Meteo</span>
+            <i data-lucide="map-pin" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-locations-count" class="text-2xl font-extrabold text-slate-900 dark:text-white">0</div>
+          <div id="stat-avg-temp" class="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">Meteo registrato</div>
+        </div>
+      </div>
+
+      <!-- Distribuzione per Anno / Mese -->
+      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+          <i data-lucide="calendar-range" class="w-4 h-4 text-blue-600"></i>
+          <span>Distribuzione Note per Anno</span>
+        </h3>
+        <div id="stat-years-breakdown" class="space-y-2.5 pt-1">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+
+      <!-- Top Luoghi & Tag -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <i data-lucide="map" class="w-4 h-4 text-emerald-600"></i>
+            <span>Località più frequenti</span>
+          </h3>
+          <div id="stat-locations-list" class="space-y-2 text-sm">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <i data-lucide="folder" class="w-4 h-4 text-indigo-600"></i>
+            <span>Cartelle & Categorie</span>
+          </h3>
+          <div id="stat-folders-list" class="space-y-2 text-sm">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ================= VIEW 4: IMPOSTAZIONI & BACKUP ================= -->
+    <section id="view-settings" class="hidden fade-in space-y-5">
+      
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold text-xl text-slate-900 dark:text-white">Impostazioni & Backup</h2>
+        <span class="text-xs text-slate-400">Versione 2.0 WebApp</span>
+      </div>
+
+      <!-- Backup & Import Card -->
+      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        
+        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+          <i data-lucide="database" class="w-4 h-4 text-blue-600"></i>
+          <span>Importazione & Esportazione Dati</span>
+        </h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Puoi importare il tuo archivio esportato da <strong>Diaro (file .TXT)</strong> oppure creare e ripristinare backup completi in formato <strong>JSON</strong> contenenti anche le immagini.
+        </p>
+
+        <!-- Pulsanti Azione Import / Export -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          
+          <!-- 1. Importa Diaro .TXT (PRINCIPALE) -->
+          <div class="p-4 rounded-xl border-2 border-blue-500/40 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20 flex flex-col justify-between space-y-3 relative overflow-hidden">
+            <div>
+              <div class="flex items-center gap-2 font-bold text-blue-900 dark:text-blue-200 text-sm">
+                <i data-lucide="file-input" class="w-4 h-4 text-blue-600"></i>
+                <span>Importa da Diaro (.TXT)</span>
+              </div>
+              <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                Carica il file <strong>.TXT</strong> esportato da Diaro. Riconosce automaticamente date, titoli <code>::: Titolo :::</code>, meteo e luoghi, separati dalla riga a 80 trattini.
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="file" id="diaro-file-input" accept=".txt" class="hidden" onchange="app.handleDiaroFileImport(event)">
+              <button onclick="document.getElementById('diaro-file-input').click()" class="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all text-center flex items-center justify-center gap-1.5">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span>Seleziona File Diaro .TXT</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Esporta Diaro .TXT -->
+          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                <i data-lucide="file-output" class="w-4 h-4 text-indigo-600"></i>
+                <span>Esporta in Diaro (.TXT)</span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Salva tutte le note correnti in un unico file compatibile con il formato Diaro (separatore 80 trattini).</p>
+            </div>
+            <button onclick="app.exportDiaroTxt()" class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all text-center">
+              Esporta File .TXT
+            </button>
+          </div>
+
+          <!-- 3. Esporta Backup JSON Completo -->
+          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                <i data-lucide="download-cloud" class="w-4 h-4 text-emerald-600"></i>
+                <span>Backup Completo (.JSON)</span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Include tutte le note, fotografie, meteo, cartelle e date.</p>
+            </div>
+            <button onclick="app.exportJsonBackup()" class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all text-center">
+              Scarica Backup JSON
+            </button>
+          </div>
+
+          <!-- 4. Ripristina Backup JSON -->
+          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
+            <div>
+              <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                <i data-lucide="upload-cloud" class="w-4 h-4 text-amber-600"></i>
+                <span>Ripristina Backup (.JSON)</span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Carica un file di backup JSON per ripristinare il tuo archivio con foto.</p>
+            </div>
+            <input type="file" id="json-file-input" accept=".json" class="hidden" onchange="app.handleJsonBackupImport(event)">
+            <button onclick="document.getElementById('json-file-input').click()" class="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all text-center">
+              Ripristina File JSON
+            </button>
+          </div>
+
+        </div>
+
+        <!-- 1-Click Demo Sample Import -->
+        <div class="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/60 border border-blue-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="font-bold text-xs text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+              <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+              <span>File di esempio Diaro</span>
+            </h4>
+            <p class="text-[11px] text-blue-700 dark:text-slate-400 mt-0.5">Puoi caricare istantaneamente le note del testo allegato per testare l'applicazione.</p>
+          </div>
+          <button onclick="app.importSampleDiaroDirectly()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-sm whitespace-nowrap">
+            Importa Note Esempio
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Gestione Memoria Locale & Reset -->
+      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+          <i data-lucide="hard-drive" class="w-4 h-4 text-slate-500"></i>
+          <span>Archiviazione Locale (IndexedDB)</span>
+        </h3>
+        
+        <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl">
+          <div>
+            <span class="font-semibold block text-slate-800 dark:text-slate-200">Stato Database</span>
+            <span id="storage-status-text">IndexedDB attivo e persistente</span>
+          </div>
+          <div id="storage-usage-badge" class="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-md text-slate-700 dark:text-slate-300">
+            0 note archiviate
+          </div>
+        </div>
+
+        <div class="pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <p class="text-xs text-red-500">Attenzione: l'eliminazione dei dati cancellerà tutte le note salvate sul browser.</p>
+          <button onclick="app.confirmResetDatabase()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-xl text-xs font-bold transition-all">
+            Cancella Tutte le Note
+          </button>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ================= MODALE / SCHERMATA EDITOR NOTA ================= -->
+  <div id="editor-modal" class="fixed inset-0 z-50 bg-black/60 modal-backdrop hidden flex items-center justify-center p-0 sm:p-4 overflow-y-auto">
+    <div class="bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-3xl min-h-screen sm:min-h-0 sm:max-h-[92vh] flex flex-col shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 overflow-hidden slide-up">
+      
+      <!-- Top Action Bar dell'Editor -->
+      <div class="px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+        
+        <!-- Back / Cancel Button -->
+        <button onclick="app.closeEditor()" class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-semibold">
+          <i data-lucide="arrow-left" class="w-5 h-5"></i>
+          <span class="hidden sm:inline">Chiudi</span>
+        </button>
+
+        <!-- Date / Time Preview in Header -->
+        <div class="flex-1 text-center">
+          <input 
+            type="datetime-local" 
+            id="editor-datetime-input" 
+            class="text-xs font-bold text-slate-700 dark:text-slate-300 bg-transparent border-0 focus:ring-0 text-center cursor-pointer hover:underline"
+            title="Tocca per cambiare data e ora"
+          >
+        </div>
+
+        <!-- Top Right Actions: Insert Photo & Save -->
+        <div class="flex items-center gap-1.5">
+          <!-- Hidden file input for photos -->
+          <input type="file" id="photo-file-input" accept="image/*" multiple class="hidden" onchange="app.handlePhotoUpload(event)">
+          
+          <!-- Inserisci Fotografia (simbolino) -->
+          <button onclick="document.getElementById('photo-file-input').click()" class="p-2 rounded-xl text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/40 transition-colors flex items-center gap-1 text-xs font-bold" title="Inserisci Fotografia">
+            <i data-lucide="camera" class="w-5 h-5"></i>
+            <span class="hidden sm:inline">Foto</span>
+          </button>
+
+          <!-- Salva (simbolino/bottone) -->
+          <button onclick="app.saveNote()" class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all">
+            <i data-lucide="save" class="w-4 h-4 stroke-[2.5]"></i>
+            <span>Salva</span>
+          </button>
+
+          <!-- Options Menu / Delete Button (if existing note) -->
+          <button id="editor-delete-btn" onclick="app.deleteCurrentNote()" class="hidden p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors" title="Elimina nota">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Editor Body Scrollable -->
+      <div class="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4">
+        
+        <!-- Input Titolo -->
+        <div>
+          <input 
+            type="text" 
+            id="editor-title" 
+            placeholder="Titolo" 
+            class="w-full text-xl sm:text-2xl font-bold bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 px-0 py-1 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all outline-none"
+          >
+        </div>
+
+        <!-- Barra Strumenti Formattazione Rapida -->
+        <div class="flex items-center gap-1 text-slate-500 dark:text-slate-400 text-xs overflow-x-auto py-1 border-b border-slate-100 dark:border-slate-800">
+          <button onclick="app.insertEditorFormat('bold')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded font-bold" title="Grassetto">B</button>
+          <button onclick="app.insertEditorFormat('italic')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded italic" title="Corsivo">I</button>
+          <button onclick="app.insertEditorFormat('list')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Elenco puntato"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
+          <button onclick="app.insertEditorFormat('check')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Casella di spunta"><i data-lucide="check-square" class="w-3.5 h-3.5"></i></button>
+          <button onclick="app.insertEditorFormat('divider')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Separatore"><i data-lucide="minus" class="w-3.5 h-3.5"></i></button>
+          <button onclick="app.insertEditorFormat('time')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Inserisci Ora Corrente"><i data-lucide="clock" class="w-3.5 h-3.5"></i></button>
+          <span class="text-[11px] ml-auto text-slate-400" id="editor-word-count">0 parole</span>
+        </div>
+
+        <!-- Input Nota (Corpo) -->
+        <div>
+          <textarea 
+            id="editor-content" 
+            placeholder="Scrivi la tua nota qui..." 
+            class="editor-textarea w-full bg-transparent border-0 focus:ring-0 px-0 text-base text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 outline-none"
+            oninput="app.onEditorContentChange()"
+          ></textarea>
+        </div>
+
+        <!-- Galleria Foto della Nota -->
+        <div id="editor-photos-container" class="space-y-2 pt-2 hidden">
+          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="images" class="w-3.5 h-3.5 text-pink-500"></i>
+            <span>Fotografie allegate (<span id="editor-photos-count">0</span>)</span>
+          </label>
+          <div id="editor-photos-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            <!-- Miniatures rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Metadati e Dettagli Aggiuntivi (Meteo, Luogo, Cartella, Tag) -->
+        <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          
+          <div class="flex items-center justify-between cursor-pointer" onclick="app.toggleMetaAccordion()">
+            <span class="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+              <span>Dettagli aggiuntivi (Meteo, Luogo, Cartella)</span>
+            </span>
+            <i data-lucide="chevron-down" id="meta-accordion-icon" class="w-4 h-4 text-slate-400 transition-transform"></i>
+          </div>
+
+          <div id="meta-accordion-content" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            
+            <!-- Luogo con Rilevamento GPS / Wi-Fi / Cella -->
+            <div class="space-y-1 sm:col-span-1">
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                  <i data-lucide="map-pin" class="w-3 h-3 text-emerald-500"></i>
+                  <span>Luogo / Indirizzo</span>
+                </label>
+                <button type="button" onclick="app.detectCurrentLocationAndWeather(true)" class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5" title="Rileva posizione attuale via GPS / Cella / Wi-Fi">
+                  <i data-lucide="crosshair" class="w-2.5 h-2.5"></i>
+                  <span>Rileva</span>
+                </button>
+              </div>
+              <div class="relative flex items-center">
+                <input 
+                  type="text" 
+                  id="editor-location" 
+                  placeholder="es. Madrid, Spagna" 
+                  class="w-full text-xs p-2 pr-7 rounded-xl bg-slate-100 dark:bg-slate-800 border-0 focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200"
+                >
+                <span id="location-spinner" class="hidden absolute right-2 text-blue-500 animate-spin text-xs">⟳</span>
+              </div>
+            </div>
+
+            <!-- Meteo con Rilevamento Automatico -->
+            <div class="space-y-1 sm:col-span-1">
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                  <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i>
+                  <span>Meteo</span>
+                </label>
+                <button type="button" onclick="app.detectCurrentLocationAndWeather(true)" class="text-[10px] text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-0.5" title="Aggiorna meteo locale">
+                  <i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i>
+                  <span>Aggiorna</span>
+                </button>
+              </div>
+              <input 
+                type="text" 
+                id="editor-weather" 
+                placeholder="es. 28.1°C Soleggiato" 
+                class="w-full text-xs p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border-0 focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200"
+              >
+            </div>
+
+            <!-- Cartella -->
+            <div class="space-y-1 sm:col-span-1">
+              <label class="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                <i data-lucide="folder" class="w-3 h-3 text-indigo-500"></i>
+                <span>Cartella / Categoria</span>
+              </label>
+              <input 
+                type="text" 
+                id="editor-folder" 
+                placeholder="es. Lavoro, Viaggi" 
+                class="w-full text-xs p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border-0 focus:ring-1 focus:ring-blue-500 text-slate-800 dark:text-slate-200"
+              >
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODALE VISUALIZZATORE FOTO FULLSCREEN ================= -->
+  <div id="image-viewer-modal" class="fixed inset-0 z-50 bg-black/90 hidden flex items-center justify-center p-4" onclick="app.closeImageViewer()">
+    <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+      <button onclick="app.closeImageViewer()" class="absolute -top-10 right-0 text-white hover:text-slate-300 p-2">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+      <img id="image-viewer-img" src="" alt="Anteprima Foto" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
+    </div>
+  </div>
+
+  <!-- ================= MODALE CONFERMA RESET/ELIMINAZIONE ================= -->
+  <div id="confirm-modal" class="fixed inset-0 z-50 bg-black/60 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 scale-in">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-950/50 flex items-center justify-center text-red-600">
+          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 id="confirm-modal-title" class="font-bold text-base text-slate-900 dark:text-white">Conferma Operazione</h3>
+          <p id="confirm-modal-desc" class="text-xs text-slate-500 dark:text-slate-400">Sei sicuro di voler procedere?</p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="app.closeConfirmModal()" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+          Annulla
+        </button>
+        <button id="confirm-modal-ok-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-colors">
+          Conferma
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= BARRA INFERIORE DI NAVIGAZIONE (SMARTPHONE & TABLET) ================= -->
+  <nav class="bottom-nav fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/80 dark:border-slate-800/80 px-4 py-2 md:hidden">
+    <div class="max-w-md mx-auto flex items-center justify-around relative">
+      
+      <!-- Tasto Note (Home) -->
+      <button onclick="app.switchView('notes')" id="nav-mobile-notes" class="flex flex-col items-center justify-center gap-1 text-blue-600 py-1 transition-colors">
+        <i data-lucide="file-text" class="w-5 h-5"></i>
+        <span class="text-[10px] font-bold">Note</span>
+      </button>
+
+      <!-- Tasto Calendario Mensile -->
+      <button onclick="app.switchView('calendar')" id="nav-mobile-calendar" class="flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 py-1 transition-colors">
+        <i data-lucide="calendar" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Calendario</span>
+      </button>
+
+      <!-- TASTO CENTRALE '+' PROMINENTE -->
+      <div class="relative -top-5">
+        <button onclick="app.openEditor()" class="fab-btn w-13 h-13 p-3.5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30">
+          <i data-lucide="plus" class="w-6 h-6 stroke-[2.8]"></i>
+        </button>
+      </div>
+
+      <!-- Tasto Statistiche -->
+      <button onclick="app.switchView('stats')" id="nav-mobile-stats" class="flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 py-1 transition-colors">
+        <i data-lucide="bar-chart-2" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Statistiche</span>
+      </button>
+
+      <!-- Tasto Impostazioni (Ingranaggio) -->
+      <button onclick="app.switchView('settings')" id="nav-mobile-settings" class="flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 py-1 transition-colors">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Opzioni</span>
+      </button>
+
+    </div>
+  </nav>
+
+  <!-- ================= TOAST CONTAINER ================= -->
+  <div id="toast-container" class="fixed top-5 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-sm w-11/12 z-50"></div>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
