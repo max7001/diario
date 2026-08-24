@@ -990,7 +990,7 @@ class AppController {
     }
   }
 
-  // --- SUPPORTO PRESSIONE PROLUNGATA (3 SECONDI) & REGISTRAZIONE VOCALE ---
+  // --- SUPPORTO PRESSIONE PROLUNGATA (CIRCA 2 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
   initLongPressListeners() {
     const fabBtn = document.getElementById('main-fab-btn');
     const desktopBtn = document.getElementById('desktop-add-btn');
@@ -1003,18 +1003,29 @@ class AppController {
       let pressTimer = null;
       let animInterval = null;
       let isLongPressed = false;
+      let isRecordingTriggered = false;
       let startX = 0;
       let startY = 0;
 
+      const cleanupHold = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        if (animInterval) { clearInterval(animInterval); animInterval = null; }
+        if (progressRing) progressRing.classList.add('hidden');
+        if (progressCircle) progressCircle.style.strokeDashoffset = '176';
+      };
+
       const startHold = (e) => {
-        if (this.isRecording) return; // Se stiamo registrando, il click normale gestirà lo stop
+        // Se stiamo già registrando, il click/tap gestirà lo stop manuale
+        if (this.isRecording) return;
+        
         isLongPressed = false;
+        isRecordingTriggered = false;
         startX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
         startY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
 
         let elapsed = 0;
-        const total = 3000;
-        const step = 40;
+        const total = 2000; // Circa 2 secondi di pressione
+        const step = 30;
 
         if (progressRing && progressCircle) {
           progressRing.classList.remove('hidden');
@@ -1031,45 +1042,65 @@ class AppController {
 
         pressTimer = setTimeout(() => {
           isLongPressed = true;
-          cleanup();
+          isRecordingTriggered = true;
+          cleanupHold();
+          
+          // Feedback aptico (vibrazione)
           if (navigator.vibrate) {
-            try { navigator.vibrate([100, 50, 100]); } catch (vErr) {}
+            try { navigator.vibrate([100, 40, 100]); } catch (vErr) {}
           }
+          
+          // Avvia registrazione vocale mentre il tasto è ancora premuto
           this.startVoiceRecording();
         }, total);
       };
 
-      const cleanup = () => {
-        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-        if (animInterval) { clearInterval(animInterval); animInterval = null; }
-        if (progressRing) progressRing.classList.add('hidden');
-        if (progressCircle) progressCircle.style.strokeDashoffset = '176';
+      const handleRelease = () => {
+        cleanupHold();
+
+        // Se la registrazione era stata avviata dalla pressione prolungata, si interrompe al rilascio del tasto
+        if (isRecordingTriggered || this.isRecording) {
+          if (this.isRecording) {
+            this.stopVoiceRecording();
+          }
+          isRecordingTriggered = false;
+          // Lasciamo isLongPressed a true per bloccare l'evento click successivo
+          setTimeout(() => {
+            isLongPressed = false;
+          }, 200);
+        }
       };
 
-      // Pointer Down
+      // Pointer Down / Touch Start
       btn.addEventListener('pointerdown', (e) => {
         startHold(e);
       });
 
-      // Pointer Move (se trascina/scrolla, annulla il timer)
+      // Pointer Move (se trascina oltre una soglia, annulla il timer)
       btn.addEventListener('pointermove', (e) => {
         if (!pressTimer) return;
         const curX = e.clientX || 0;
         const curY = e.clientY || 0;
-        if (Math.hypot(curX - startX, curY - startY) > 25) {
-          cleanup();
+        if (Math.hypot(curX - startX, curY - startY) > 30) {
+          cleanupHold();
         }
       });
 
-      // Pointer Up / Cancel
+      // Pointer Up / Cancel / Touch End (Rilascio tasto)
       btn.addEventListener('pointerup', () => {
-        cleanup();
+        handleRelease();
       });
       btn.addEventListener('pointercancel', () => {
-        cleanup();
+        handleRelease();
+      });
+      btn.addEventListener('pointerleave', () => {
+        // Se esce dal pulsante mentre sta tenendo premuto durante la registrazione, ferma la registrazione
+        if (isRecordingTriggered && this.isRecording) {
+          handleRelease();
+        }
       });
 
-      // Click Event Principale
+      // Click Event (per tocco rapido normale < 2 secondi)
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         if (isLongPressed) {
@@ -1086,6 +1117,13 @@ class AppController {
 
     setupButton(fabBtn);
     setupButton(desktopBtn);
+
+    // Rilascio globale a livello di finestra per massima sicurezza
+    window.addEventListener('pointerup', () => {
+      if (this.isRecording) {
+        this.stopVoiceRecording();
+      }
+    });
   }
 
   // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
@@ -1298,7 +1336,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
   "summary": "Riassunto e testo completo della nota"
 }`;
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [
@@ -1349,8 +1387,8 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
             }
           }
         } else {
-          console.warn('Risposta non OK da Gemini 2.5, tentativo con gemini-1.5-flash:', response.status);
-          const fallbackEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+          console.warn('Risposta non OK da Gemini 3.6, tentativo con gemini-3.5-flash:', response.status);
+          const fallbackEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
           const fbRes = await fetch(fallbackEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
