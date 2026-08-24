@@ -2355,11 +2355,13 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
     // Passa alla schermata editor a tutto schermo
     this.switchView('editor');
+    this.adjustEditorTextareaHeight();
 
-    // Focus automatico sul titolo per nuove note
+    // Ricalcola l'altezza esatta dopo il rendering della vista ed eventuale focus
     setTimeout(() => {
+      this.adjustEditorTextareaHeight();
       if (!noteId) titleInput?.focus();
-    }, 150);
+    }, 80);
 
     if (window.lucide) lucide.createIcons();
   }
@@ -2546,12 +2548,23 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
   }
 
   onEditorContentChange() {
-    const content = document.getElementById('editor-content')?.value || '';
+    const textarea = document.getElementById('editor-content');
+    const content = textarea?.value || '';
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
     const wordCountEl = document.getElementById('editor-word-count');
     if (wordCountEl) {
       wordCountEl.textContent = `${words} ${words === 1 ? 'parola' : 'parole'}`;
     }
+    this.adjustEditorTextareaHeight();
+  }
+
+  adjustEditorTextareaHeight() {
+    const textarea = document.getElementById('editor-content');
+    if (!textarea) return;
+    // Resetta l'altezza a 0 prima di misurare lo scrollHeight reale
+    textarea.style.height = 'auto';
+    const newHeight = Math.max(250, textarea.scrollHeight);
+    textarea.style.height = `${newHeight}px`;
   }
 
   toggleMetaAccordion() {

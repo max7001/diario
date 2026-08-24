@@ -192,11 +192,14 @@ body {
   transition: transform 0.2s ease;
 }
 
-/* Editor Textarea */
+/* Editor Textarea Auto-Espandibile */
 .editor-textarea {
-  min-height: 220px;
-  resize: vertical;
+  min-height: 250px;
+  height: auto;
+  overflow-y: hidden;
+  resize: none;
   line-height: 1.65;
+  transition: height 0.1s ease-out;
 }
 
 /* Modal Backdrop */
@@ -222,6 +225,6 @@ body {
 /* Responsive Utilities per Smartphone */
 @media (max-width: 640px) {
   .editor-textarea {
-    min-height: 180px;
+    min-height: 200px;
   }
 }
