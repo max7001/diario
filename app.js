@@ -1126,6 +1126,53 @@ class AppController {
     });
   }
 
+  // --- EFFETTI SONORI REGISTRAZIONE VOCALE (WEB AUDIO API) ---
+  playRecordingSound(type) {
+    try {
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtxClass) return;
+      const ctx = new AudioCtxClass();
+      
+      if (type === 'start') {
+        // Suono Inizio Registrazione: doppio tono armonico ascendente (520Hz -> 880Hz)
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+        
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+        
+        osc.start(now);
+        osc.stop(now + 0.18);
+      } else if (type === 'stop') {
+        // Suono Fine Registrazione: tono discendente di conferma (880Hz -> 440Hz)
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(440, now + 0.14);
+        
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+    } catch (e) {
+      console.warn('Audio feedback warning:', e);
+    }
+  }
+
   // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
   async startVoiceRecording() {
     try {
@@ -1171,6 +1218,9 @@ class AppController {
       this.isRecording = true;
       this.recordingStartTime = Date.now();
 
+      // Suono acustico di avvio registrazione
+      this.playRecordingSound('start');
+
       // UI: trasforma il pulsante in STOP rosso e mostra il banner
       this.updateRecordingUI(true);
 
@@ -1196,6 +1246,10 @@ class AppController {
   stopVoiceRecording() {
     if (!this.isRecording) return;
     this.isRecording = false;
+    
+    // Suono acustico di fine registrazione
+    this.playRecordingSound('stop');
+
     if (this.recordingTimerInterval) {
       clearInterval(this.recordingTimerInterval);
       this.recordingTimerInterval = null;
@@ -1371,6 +1425,11 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         if (response.ok) {
           const result = await response.json();
           const candidateText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          
+          // Tracciamento Token consumati
+          const tokensUsed = result.usageMetadata?.totalTokenCount || ((result.usageMetadata?.promptTokenCount || 0) + (result.usageMetadata?.candidatesTokenCount || 0)) || Math.round(base64Data.length / 3);
+          this.addAiTokenUsage(tokensUsed);
+
           if (candidateText) {
             try {
               const parsed = JSON.parse(candidateText);
@@ -1398,6 +1457,10 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
           if (fbRes.ok) {
             const fbResult = await fbRes.json();
             const fbText = fbResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            
+            const fbTokensUsed = fbResult.usageMetadata?.totalTokenCount || ((fbResult.usageMetadata?.promptTokenCount || 0) + (fbResult.usageMetadata?.candidatesTokenCount || 0)) || Math.round(base64Data.length / 3);
+            this.addAiTokenUsage(fbTokensUsed);
+
             if (fbText) {
               try {
                 const parsed = JSON.parse(fbText);
@@ -1538,17 +1601,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     return { location, weather };
   }
 
-  saveCustomGeminiKey() {
-    const input = document.getElementById('gemini-api-key-input');
-    const val = input?.value.trim();
-    if (val) {
-      localStorage.setItem('massinote_custom_gemini_key', val);
-      if (input) input.value = '';
-      this.showToast('Chiave API Gemini aggiornata con successo!', 'success');
-    } else {
-      this.showToast('Inserisci una chiave API valida', 'error');
-    }
-  }
+
 
   // --- GESTIONE VISTE E NAVIGAZIONE ---
   switchView(viewName) {
@@ -2811,6 +2864,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
   // --- ELIMINAZIONE NOTA ---
   confirmDeleteNote(id) {
+    if (!id) return;
     const note = this.notes.find(n => n.id === id);
     this.openConfirmModal(
       'Elimina Nota',
@@ -2819,25 +2873,51 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         try {
           this.setCloudStatus('syncing', 'Eliminazione...');
           await this.db.delete(id);
+          
+          const idx = this.notes.findIndex(n => n.id === id);
+          if (idx >= 0) this.notes.splice(idx, 1);
+          
           this.firebase.deleteNote(id).catch(e => console.warn('Delete Firebase warning:', e));
-          await this.loadNotes();
           this.render();
           this.updateStorageStats();
           this.setCloudStatus('online', 'Sincronizzato');
-          this.showToast('Nota eliminata', 'info');
+          this.showToast('Nota eliminata con successo', 'info');
         } catch (e) {
-          console.error(e);
-          this.showToast('Errore eliminazione nota', 'error');
+          console.error('Errore eliminazione nota:', e);
+          this.showToast('Errore durante l\'eliminazione della nota', 'error');
         }
       }
     );
   }
 
   deleteCurrentNote() {
-    if (this.editingNoteId) {
-      this.closeEditor();
-      this.confirmDeleteNote(this.editingNoteId);
-    }
+    const idToDelete = this.editingNoteId;
+    if (!idToDelete) return;
+    
+    const note = this.notes.find(n => n.id === idToDelete);
+    this.openConfirmModal(
+      'Elimina Nota',
+      `Sei sicuro di voler eliminare la nota "${note?.title || 'selezionata'}"? L'azione non può essere annullata.`,
+      async () => {
+        try {
+          this.setCloudStatus('syncing', 'Eliminazione...');
+          this.closeEditor();
+          await this.db.delete(idToDelete);
+          
+          const idx = this.notes.findIndex(n => n.id === idToDelete);
+          if (idx >= 0) this.notes.splice(idx, 1);
+          
+          this.firebase.deleteNote(idToDelete).catch(e => console.warn('Delete Firebase warning:', e));
+          this.render();
+          this.updateStorageStats();
+          this.setCloudStatus('online', 'Sincronizzato');
+          this.showToast('Nota eliminata con successo', 'info');
+        } catch (e) {
+          console.error('Errore eliminazione nota editor:', e);
+          this.showToast('Errore durante l\'eliminazione della nota', 'error');
+        }
+      }
+    );
   }
 
   // --- CONDIVISIONE NOTA ---
@@ -3080,10 +3160,77 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     );
   }
 
-  updateStorageStats() {
+  // --- UTILIZZO TOKEN AI & STATISTICHE MEMORIA DB (MB) ---
+  getAiTokenUsage() {
+    const savedTokens = parseInt(localStorage.getItem('massinote_ai_tokens_total') || '0', 10);
+    const savedAudioCount = parseInt(localStorage.getItem('massinote_ai_audio_count') || '0', 10);
+    return {
+      totalTokens: isNaN(savedTokens) ? 0 : savedTokens,
+      audioCount: isNaN(savedAudioCount) ? 0 : savedAudioCount
+    };
+  }
+
+  addAiTokenUsage(tokens) {
+    const current = this.getAiTokenUsage();
+    const newTotal = current.totalTokens + (parseInt(tokens, 10) || 0);
+    const newCount = current.audioCount + 1;
+    localStorage.setItem('massinote_ai_tokens_total', newTotal.toString());
+    localStorage.setItem('massinote_ai_audio_count', newCount.toString());
+    this.updateAiTokenUI();
+  }
+
+  updateAiTokenUI() {
+    const { totalTokens, audioCount } = this.getAiTokenUsage();
+    const tokenBadge = document.getElementById('ai-tokens-total-badge');
+    const audioBadge = document.getElementById('ai-audio-count-badge');
+    if (tokenBadge) tokenBadge.textContent = totalTokens.toLocaleString('it-IT');
+    if (audioBadge) audioBadge.textContent = audioCount.toLocaleString('it-IT');
+  }
+
+  async updateStorageStats() {
     const badge = document.getElementById('storage-usage-badge');
+    const sizeEl = document.getElementById('storage-db-size');
+    
     if (badge) {
       badge.textContent = `${this.notes.length} note archiviate`;
+    }
+
+    this.updateAiTokenUI();
+
+    // Calcolo preciso dello spazio occupato dal DB (in MegaBytes)
+    let totalBytes = 0;
+    try {
+      for (const n of this.notes) {
+        if (!n) continue;
+        totalBytes += (n.title || '').length * 2;
+        totalBytes += (n.content || '').length * 2;
+        totalBytes += (n.weather || '').length * 2;
+        totalBytes += (n.location || '').length * 2;
+        totalBytes += (n.folder || '').length * 2;
+        if (n.audio && typeof n.audio === 'string') {
+          totalBytes += n.audio.length;
+        }
+        if (Array.isArray(n.photos)) {
+          for (const p of n.photos) {
+            if (typeof p === 'string') totalBytes += p.length;
+          }
+        }
+        totalBytes += 128; // overhead record IndexedDB
+      }
+
+      if (navigator.storage && navigator.storage.estimate) {
+        const est = await navigator.storage.estimate();
+        if (est.usage && est.usage > totalBytes) {
+          totalBytes = est.usage;
+        }
+      }
+    } catch (e) {
+      console.warn('Storage size estimation error:', e);
+    }
+
+    const megabytes = (totalBytes / (1024 * 1024)).toFixed(2);
+    if (sizeEl) {
+      sizeEl.textContent = `${megabytes} MB`;
     }
   }
 

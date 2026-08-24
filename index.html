@@ -420,53 +420,45 @@
 
       </div>
 
-      <!-- 3. Configurazione Intelligenza Artificiale (Google Gemini) -->
+      <!-- 3. Utilizzo Token AI per Elaborazione Vocale -->
       <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div class="flex items-center justify-between">
           <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
-            <i data-lucide="sparkles" class="w-4 h-4 text-purple-500"></i>
-            <span>Intelligenza Artificiale (Google Gemini)</span>
+            <i data-lucide="cpu" class="w-4 h-4 text-purple-500"></i>
+            <span>Utilizzo Token AI (Elaborazione Audio)</span>
           </h3>
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/60">
-            Attivo
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-900/60">
+            Gemini AI
           </span>
         </div>
         <p class="text-xs text-slate-500 dark:text-slate-400">
-          La trascrizione e la sintesi vocale delle note sono configurate ed attive con Google Gemini AI. La chiave API è archiviata e protetta crittograficamente.
+          Monitoraggio dei token totali utilizzati per la trascrizione e la sintesi intelligente dei messaggi vocali.
         </p>
-        <div class="space-y-1.5 pt-1">
-          <label class="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block">Chiave API Gemini (opzionale per aggiornare)</label>
-          <div class="flex gap-2">
-            <input 
-              type="password" 
-              id="gemini-api-key-input" 
-              placeholder="••••••••••••••••••••••••••••••••••••••••" 
-              class="w-full text-xs p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-purple-500 text-slate-800 dark:text-slate-200 font-mono"
-            >
-            <button 
-              type="button" 
-              onclick="app.saveCustomGeminiKey()" 
-              class="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-sm"
-            >
-              Salva
-            </button>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-600 dark:text-slate-400">Token Totali Utilizzati</span>
+            <span id="ai-tokens-total-badge" class="font-mono text-sm font-bold text-purple-600 dark:text-purple-400">0</span>
+          </div>
+          <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-600 dark:text-slate-400">File Audio Elaborati</span>
+            <span id="ai-audio-count-badge" class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">0</span>
           </div>
         </div>
       </div>
 
-      <!-- Gestione Memoria Locale & Reset -->
+      <!-- 4. Gestione Memoria Locale (Spazio DB in MB) & Reset -->
       <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
         <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
           <i data-lucide="hard-drive" class="w-4 h-4 text-slate-500"></i>
           <span>Archiviazione Locale (IndexedDB)</span>
         </h3>
         
-        <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl">
+        <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl">
           <div>
-            <span class="font-semibold block text-slate-800 dark:text-slate-200">Stato Database</span>
-            <span id="storage-status-text">IndexedDB attivo e persistente</span>
+            <span class="font-semibold block text-slate-800 dark:text-slate-200">Spazio Occupato dal Database</span>
+            <span id="storage-db-size" class="text-blue-600 dark:text-blue-400 font-bold font-mono text-sm">0.00 MB</span>
           </div>
-          <div id="storage-usage-badge" class="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded-md text-slate-700 dark:text-slate-300">
+          <div id="storage-usage-badge" class="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 font-semibold">
             0 note archiviate
           </div>
         </div>
@@ -931,22 +923,6 @@
           >
         </div>
         <p id="lock-error-msg" class="text-xs font-semibold text-red-500 hidden">Codice non corretto. Riprova.</p>
-      </div>
-
-      <!-- Tastierino Numerico On-Screen -->
-      <div class="grid grid-cols-3 gap-2 max-w-[220px] mx-auto pt-1">
-        <button type="button" onclick="app.appendLockDigit('1')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">1</button>
-        <button type="button" onclick="app.appendLockDigit('2')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">2</button>
-        <button type="button" onclick="app.appendLockDigit('3')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">3</button>
-        <button type="button" onclick="app.appendLockDigit('4')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">4</button>
-        <button type="button" onclick="app.appendLockDigit('5')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">5</button>
-        <button type="button" onclick="app.appendLockDigit('6')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">6</button>
-        <button type="button" onclick="app.appendLockDigit('7')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">7</button>
-        <button type="button" onclick="app.appendLockDigit('8')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">8</button>
-        <button type="button" onclick="app.appendLockDigit('9')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">9</button>
-        <button type="button" onclick="app.clearLockInput()" class="p-3 bg-slate-200/60 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-500 font-bold text-sm rounded-2xl transition-all">C</button>
-        <button type="button" onclick="app.appendLockDigit('0')" class="p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-100 font-bold text-lg rounded-2xl transition-all">0</button>
-        <button type="button" onclick="app.backspaceLockInput()" class="p-3 bg-slate-200/60 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-500 font-bold text-sm rounded-2xl transition-all flex items-center justify-center">⌫</button>
       </div>
 
     </div>
