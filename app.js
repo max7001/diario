@@ -519,6 +519,8 @@ class AppController {
     this.currentFilter = 'all'; // 'all', 'photos', 'recent', 'folder:XYZ', 'day:YYYY-MM-DD'
     this.searchQuery = '';
     this.currentSort = 'date-desc';
+    this.notesLimit = 30;
+    this._lockListenerAttached = false;
     
     // Editor State
     this.editingNoteId = null;
@@ -573,7 +575,7 @@ class AppController {
         this.setCloudStatus('offline', 'Offline (Locale)');
       }
 
-      // 3. Inizializzazione Schermata di Blocco PIN
+      // 3. Inizializzazione Schermata di Blocco PIN (con scadenza 3 ore)
       this.initLockScreen();
     } catch (e) {
       console.error('Errore inizializzazione app:', e);
@@ -586,19 +588,39 @@ class AppController {
     }
   }
 
-  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256) ---
+  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256 CON SCADENZA 3 ORE) ---
   initLockScreen() {
-    const isUnlocked = sessionStorage.getItem('app_unlocked') === 'true';
+    const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+    const lastUnlock = parseInt(localStorage.getItem('massinote_last_unlock') || '0', 10);
     const lockScreen = document.getElementById('lock-screen');
     const pinInput = document.getElementById('lock-pin-input');
+
+    const isUnlocked = lastUnlock > 0 && (Date.now() - lastUnlock < THREE_HOURS_MS);
 
     if (isUnlocked) {
       lockScreen?.classList.add('hidden');
     } else {
       lockScreen?.classList.remove('hidden');
+      if (pinInput) pinInput.value = '';
       setTimeout(() => {
         pinInput?.focus();
       }, 300);
+    }
+
+    if (!this._lockListenerAttached) {
+      this._lockListenerAttached = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          const currentLast = parseInt(localStorage.getItem('massinote_last_unlock') || '0', 10);
+          if (!currentLast || (Date.now() - currentLast >= THREE_HOURS_MS)) {
+            const ls = document.getElementById('lock-screen');
+            const pi = document.getElementById('lock-pin-input');
+            ls?.classList.remove('hidden');
+            if (pi) pi.value = '';
+            setTimeout(() => pi?.focus(), 300);
+          }
+        }
+      });
     }
   }
 
@@ -609,7 +631,7 @@ class AppController {
 
     if (pinInput && pinInput.value.length < 8) {
       pinInput.value += digit;
-      if (pinInput.value.length === 4) {
+      if (pinInput.value.length >= 4) {
         this.verifyAppLockPin();
       }
     }
@@ -644,7 +666,7 @@ class AppController {
     const enteredHash = await calculateSha256(enteredPin);
 
     if (enteredHash === _0xSEC_PIN_HASH) {
-      sessionStorage.setItem('app_unlocked', 'true');
+      localStorage.setItem('massinote_last_unlock', Date.now().toString());
       if (errorMsg) errorMsg.classList.add('hidden');
       
       // Animazione di sblocco fluida
@@ -658,7 +680,7 @@ class AppController {
           lockScreen.style.pointerEvents = '';
         }, 300);
       }
-      this.showToast('Accesso autorizzato!', 'success');
+      this.showToast('Benvenuto in MassiNote!', 'success');
     } else {
       if (errorMsg) errorMsg.classList.remove('hidden');
       if (lockCard) {
@@ -722,21 +744,7 @@ class AppController {
   }
 
   sortNotes() {
-    if (this.currentSort === 'date-desc') {
-      this.notes.sort((a, b) => new Date(b.date) - new Date(a.date));
-    } else if (this.currentSort === 'date-asc') {
-      this.notes.sort((a, b) => new Date(a.date) - new Date(b.date));
-    } else if (this.currentSort === 'title-asc') {
-      this.notes.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-    } else if (this.currentSort === 'title-desc') {
-      this.notes.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-    }
-  }
-
-  changeSort(value) {
-    this.currentSort = value;
-    this.sortNotes();
-    this.renderNotesList();
+    this.notes.sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
   // --- GESTIONE VISTE E NAVIGAZIONE ---
@@ -813,6 +821,7 @@ class AppController {
 
   // --- FILTRI & RICERCA NOTE ---
   onSearchInput(val) {
+    this.notesLimit = 30;
     this.searchQuery = val.trim().toLowerCase();
     const clearBtn = document.getElementById('search-clear-btn');
     if (clearBtn) {
@@ -823,6 +832,7 @@ class AppController {
   }
 
   clearSearch() {
+    this.notesLimit = 30;
     const input = document.getElementById('search-input');
     if (input) input.value = '';
     this.searchQuery = '';
@@ -831,6 +841,7 @@ class AppController {
   }
 
   setFilter(filterType) {
+    this.notesLimit = 30;
     this.currentFilter = filterType;
     
     // Aggiorna stile chips
@@ -850,6 +861,7 @@ class AppController {
   }
 
   resetFilters() {
+    this.notesLimit = 30;
     this.currentFilter = 'all';
     this.searchQuery = '';
     const input = document.getElementById('search-input');
@@ -858,8 +870,16 @@ class AppController {
     this.setFilter('all');
   }
 
+  loadMoreNotes() {
+    this.notesLimit += 30;
+    this.renderNotesList();
+  }
+
   getFilteredNotes() {
     let result = [...this.notes];
+
+    // Ordinamento di default: sempre per data più recente in alto
+    result.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Filtro Ricerca
     if (this.searchQuery) {
@@ -928,6 +948,7 @@ class AppController {
     const emptyState = document.getElementById('empty-state');
     const filterStatusBar = document.getElementById('filter-status-bar');
     const filterStatusText = document.getElementById('filter-status-text');
+    const loadMoreContainer = document.getElementById('load-more-container');
 
     this.updateCounters();
 
@@ -947,6 +968,10 @@ class AppController {
 
     if (filtered.length === 0) {
       if (grid) grid.innerHTML = '';
+      if (loadMoreContainer) {
+        loadMoreContainer.classList.add('hidden');
+        loadMoreContainer.innerHTML = '';
+      }
       emptyState?.classList.remove('hidden');
       return;
     }
@@ -955,7 +980,10 @@ class AppController {
 
     if (!grid) return;
 
-    grid.innerHTML = filtered.map(note => {
+    // Limita la visualizzazione alle prime N note (default 30)
+    const toDisplay = filtered.slice(0, this.notesLimit);
+
+    grid.innerHTML = toDisplay.map(note => {
       const dateObj = new Date(note.date);
       const formattedDate = formatItalianDate(dateObj);
       const hasPhotos = note.photos && note.photos.length > 0;
@@ -1063,6 +1091,26 @@ class AppController {
         </article>
       `;
     }).join('');
+
+    // Gestione pulsante Carica Altre 30 Note
+    if (loadMoreContainer) {
+      if (filtered.length > this.notesLimit) {
+        loadMoreContainer.classList.remove('hidden');
+        loadMoreContainer.innerHTML = `
+          <button 
+            type="button" 
+            onclick="app.loadMoreNotes()" 
+            class="w-full sm:w-auto px-6 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 mx-auto"
+          >
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            <span>Carica altre 30 note (Mostrate ${toDisplay.length} di ${filtered.length})</span>
+          </button>
+        `;
+      } else {
+        loadMoreContainer.classList.add('hidden');
+        loadMoreContainer.innerHTML = '';
+      }
+    }
 
     if (window.lucide) lucide.createIcons();
   }
@@ -1270,6 +1318,32 @@ class AppController {
     this.openEditor(null, customDate);
   }
 
+  // Helper per formattare la località solo come "Paese - Città" (es. Cina - Canton, Italia - Milano)
+  formatLocationCountryCity(rawLoc) {
+    if (!rawLoc) return '';
+    const str = rawLoc.trim();
+    if (!str) return '';
+
+    if (str.includes(' - ')) return str;
+
+    const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 1) {
+      return str;
+    }
+
+    // Ultima parte: Paese (es. Italia, Cina, Spagna, Francia, Germania, ecc.)
+    const country = parts[parts.length - 1].replace(/\s*\([^)]*\)/g, '').trim();
+
+    // Città: penultima parte oppure prima parte
+    let cityCandidate = parts.length === 2 ? parts[0] : parts[parts.length - 2];
+    let cleanCity = cityCandidate.replace(/\s*\([^)]*\)/g, '').trim();
+
+    if (country && cleanCity && country.toLowerCase() !== cleanCity.toLowerCase()) {
+      return `${country} - ${cleanCity}`;
+    }
+    return country || cleanCity || str;
+  }
+
   // --- STATISTICHE ---
   renderStats() {
     const totalNotes = this.notes.length;
@@ -1289,10 +1363,12 @@ class AppController {
       const words = text ? text.split(/\s+/).length : 0;
       totalWords += words;
 
-      // Luogo
+      // Luogo (Formattato come Paese - Città)
       if (n.location) {
-        const loc = n.location.trim();
-        locationsMap[loc] = (locationsMap[loc] || 0) + 1;
+        const loc = this.formatLocationCountryCity(n.location);
+        if (loc) {
+          locationsMap[loc] = (locationsMap[loc] || 0) + 1;
+        }
       }
 
       // Cartella
@@ -1775,8 +1851,15 @@ class AppController {
   }
 
   removeEditorPhoto(index) {
-    this.editorPhotos.splice(index, 1);
-    this.renderEditorPhotos();
+    this.openConfirmModal(
+      'Elimina Fotografia',
+      'Sei sicuro di voler rimuovere questa fotografia dalla nota?',
+      () => {
+        this.editorPhotos.splice(index, 1);
+        this.renderEditorPhotos();
+        this.showToast('Fotografia rimossa', 'info');
+      }
+    );
   }
 
   // --- SALVATAGGIO NOTA ---
