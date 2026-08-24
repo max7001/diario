@@ -1499,7 +1499,9 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       if (span) span.className = 'text-[10px] font-bold';
     }
 
-    if (viewName === 'calendar') {
+    if (viewName === 'notes') {
+      this.renderNotesList();
+    } else if (viewName === 'calendar') {
       this.renderCalendar();
     } else if (viewName === 'stats') {
       this.renderStats();
@@ -1570,12 +1572,17 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
   getFilteredNotes() {
     let result = [...this.notes];
 
-    // Ordinamento di default: sempre per data più recente in alto
-    result.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Ordinamento di default: sempre per data più recente in alto (con gestione sicura timestamp)
+    result.sort((a, b) => {
+      const timeA = a && a.date ? (new Date(a.date).getTime() || 0) : 0;
+      const timeB = b && b.date ? (new Date(b.date).getTime() || 0) : 0;
+      return timeB - timeA;
+    });
 
     // Filtro Ricerca
     if (this.searchQuery) {
       result = result.filter(n => {
+        if (!n) return false;
         const title = (n.title || '').toLowerCase();
         const content = (n.content || '').toLowerCase();
         const weather = (n.weather || '').toLowerCase();
@@ -1591,23 +1598,29 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
     // Filtro Chip
     if (this.currentFilter === 'photos') {
-      result = result.filter(n => n.photos && n.photos.length > 0);
+      result = result.filter(n => n && Array.isArray(n.photos) && n.photos.length > 0);
     } else if (this.currentFilter === 'recent') {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      result = result.filter(n => new Date(n.date) >= thirtyDaysAgo);
+      result = result.filter(n => {
+        if (!n || !n.date) return false;
+        const d = new Date(n.date);
+        return !isNaN(d.getTime()) && d >= thirtyDaysAgo;
+      });
     } else if (this.currentFilter.startsWith('day:')) {
       const targetDayStr = this.currentFilter.replace('day:', '');
       result = result.filter(n => {
+        if (!n || !n.date) return false;
         const d = new Date(n.date);
+        if (isNaN(d.getTime())) return false;
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
         const day = String(d.getDate()).padStart(2, '0');
         return `${y}-${m}-${day}` === targetDayStr;
       });
     } else if (this.currentFilter.startsWith('folder:')) {
-      const targetFolder = this.currentFilter.replace('folder:', '');
-      result = result.filter(n => (n.folder || '').toLowerCase() === targetFolder.toLowerCase());
+      const targetFolder = this.currentFilter.replace('folder:', '').toLowerCase();
+      result = result.filter(n => n && (n.folder || '').toLowerCase() === targetFolder);
     }
 
     return result;
@@ -1621,7 +1634,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
   updateCounters() {
     const total = this.notes.length;
-    const withPhotos = this.notes.filter(n => n.photos && n.photos.length > 0).length;
+    const withPhotos = this.notes.filter(n => n && Array.isArray(n.photos) && n.photos.length > 0).length;
 
     const countAllEl = document.getElementById('count-all');
     if (countAllEl) countAllEl.textContent = total;
@@ -1676,9 +1689,10 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     const toDisplay = filtered.slice(0, this.notesLimit);
 
     grid.innerHTML = toDisplay.map(note => {
-      const dateObj = new Date(note.date);
+      if (!note) return '';
+      let dateObj = parseDateSafe(note.date);
       const formattedDate = formatItalianDate(dateObj);
-      const hasPhotos = note.photos && note.photos.length > 0;
+      const hasPhotos = Array.isArray(note.photos) && note.photos.length > 0;
       const photosCount = hasPhotos ? note.photos.length : 0;
 
       // Snippet del contenuto
@@ -1704,15 +1718,15 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       const weatherBadgeHtml = note.weather
         ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
              <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i>
-             <span>${note.weather}</span>
+             <span>${escapeHtml(note.weather)}</span>
            </span>`
         : '';
 
       // Badge Luogo
       const locationBadgeHtml = note.location
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 max-w-[150px] truncate" title="${note.location}">
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 max-w-[150px] truncate" title="${escapeHtml(note.location)}">
              <i data-lucide="map-pin" class="w-3 h-3 text-emerald-500 shrink-0"></i>
-             <span class="truncate">${note.location}</span>
+             <span class="truncate">${escapeHtml(note.location)}</span>
            </span>`
         : '';
 
@@ -1720,7 +1734,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       const folderBadgeHtml = note.folder
         ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/50">
              <i data-lucide="folder" class="w-3 h-3 text-indigo-500"></i>
-             <span>${note.folder}</span>
+             <span>${escapeHtml(note.folder)}</span>
            </span>`
         : '';
 
@@ -1732,9 +1746,11 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
            </div>`
         : '';
 
+      const safeId = String(note.id || '').replace(/'/g, "\\'");
+
       return `
         <article 
-          onclick="app.openEditor('${note.id}')"
+          onclick="app.openEditor('${safeId}')"
           class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
         >
           <div>
@@ -1774,14 +1790,14 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
             <div class="flex items-center gap-1 shrink-0">
               <button 
-                onclick="event.stopPropagation(); app.shareNote('${note.id}')" 
+                onclick="event.stopPropagation(); app.shareNote('${safeId}')" 
                 class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors" 
                 title="Copia / Condividi testo"
               >
                 <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
               </button>
               <button 
-                onclick="event.stopPropagation(); app.confirmDeleteNote('${note.id}')" 
+                onclick="event.stopPropagation(); app.confirmDeleteNote('${safeId}')" 
                 class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors" 
                 title="Elimina"
               >
