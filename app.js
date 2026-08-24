@@ -151,6 +151,27 @@ function toDatetimeLocalValue(dateObj) {
   return d.toISOString().slice(0, 16);
 }
 
+// Helper per parsing sicuro di date (previene RangeError su input datetime-local)
+function parseDateSafe(input) {
+  if (!input) return new Date();
+  if (input instanceof Date && !isNaN(input.getTime())) return input;
+  const d = new Date(input);
+  if (!isNaN(d.getTime())) return d;
+  if (typeof input === 'string') {
+    const parts = input.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+    if (parts) {
+      return new Date(
+        parseInt(parts[1], 10),
+        parseInt(parts[2], 10) - 1,
+        parseInt(parts[3], 10),
+        parseInt(parts[4] || '12', 10),
+        parseInt(parts[5] || '00', 10)
+      );
+    }
+  }
+  return new Date();
+}
+
 // ================= FIREBASE CONFIGURATION & FIRESTORE MANAGER =================
 const firebaseConfig = {
   apiKey: "AIzaSyAEROCv8lYbMaxDVhg4u4kcfjGPO2UZL2M",
@@ -696,19 +717,15 @@ class AppController {
       if (fbOnline) {
         this.setCloudStatus('online', 'Cloud Sync Attivo');
         
-        // Sottoscrizione alle modifiche in tempo reale da Firestore
+        // Sottoscrizione alle modifiche in tempo reale da Firestore con unione intelligente
         this.firebase.subscribeNotes(
           async (cloudNotes) => {
             if (cloudNotes && cloudNotes.length > 0) {
-              this.notes = cloudNotes;
-              await this.db.putBatch(cloudNotes);
-              this.sortNotes();
-              this.render();
-              this.updateStorageStats();
+              await this.mergeCloudNotes(cloudNotes);
               this.setCloudStatus('online', 'Sincronizzato');
             } else if (this.notes.length > 0) {
               // Se Firestore è vuoto ma abbiamo note locali, sincronizza il cloud
-              await this.firebase.saveBatch(this.notes);
+              this.firebase.saveBatch(this.notes).catch(e => console.warn('Sync initial batch warning:', e));
             }
           },
           (err) => {
@@ -885,6 +902,45 @@ class AppController {
     } catch (e) {
       console.error('Errore lettura note:', e);
       this.notes = [];
+    }
+  }
+
+  async mergeCloudNotes(cloudNotes) {
+    if (!Array.isArray(cloudNotes) || cloudNotes.length === 0) return;
+    
+    // Costruisci mappa delle note locali
+    const localMap = new Map(this.notes.map(n => [n.id, n]));
+    let hasChanges = false;
+
+    for (const cn of cloudNotes) {
+      if (!cn || !cn.id) continue;
+      const local = localMap.get(cn.id);
+      if (!local) {
+        // Nuova nota proveniente dal cloud
+        localMap.set(cn.id, cn);
+        hasChanges = true;
+      } else {
+        // Nota esistente: preserva foto e audio locali se il cloud non li contiene per limiti payload
+        const localUpdated = new Date(local.updatedAt || local.date || 0).getTime();
+        const cloudUpdated = new Date(cn.updatedAt || cn.date || 0).getTime();
+        if (cloudUpdated > localUpdated) {
+          const merged = {
+            ...cn,
+            photos: (cn.photos && cn.photos.length > 0) ? cn.photos : (local.photos || []),
+            audio: cn.audio || local.audio || null
+          };
+          localMap.set(cn.id, merged);
+          hasChanges = true;
+        }
+      }
+    }
+
+    if (hasChanges) {
+      this.notes = Array.from(localMap.values());
+      this.sortNotes();
+      await this.db.putBatch(this.notes).catch(e => console.warn('DB merge error:', e));
+      this.render();
+      this.updateStorageStats();
     }
   }
 
@@ -2548,7 +2604,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
     const title = titleInput?.value.trim() || 'Senza Titolo';
     const content = contentInput?.value.trim() || '';
-    const dateVal = dateInput?.value ? new Date(dateInput.value) : new Date();
+    const dateVal = parseDateSafe(dateInput?.value);
     const weather = weatherInput?.value.trim() || '';
     const location = locationInput?.value.trim() || '';
     const folder = folderInput?.value.trim() || '';
@@ -2558,37 +2614,55 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       return;
     }
 
+    const noteId = this.editingNoteId || ('note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+    const nowIso = new Date().toISOString();
+    const existing = this.editingNoteId ? this.notes.find(n => n.id === this.editingNoteId) : null;
+
     const noteObj = {
-      id: this.editingNoteId || ('note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+      id: noteId,
       title: title,
       content: content,
       date: dateVal.toISOString(),
       weather: weather,
       location: location,
       folder: folder,
-      tags: [],
+      tags: existing?.tags || [],
       photos: [...this.editorPhotos],
       audio: this.editorAudio || null,
-      pinned: false,
-      createdAt: this.editingNoteId ? (this.notes.find(n => n.id === this.editingNoteId)?.createdAt || dateVal.toISOString()) : dateVal.toISOString(),
-      updatedAt: new Date().toISOString()
+      pinned: existing ? Boolean(existing.pinned) : false,
+      createdAt: existing?.createdAt || dateVal.toISOString(),
+      updatedAt: nowIso
     };
 
     try {
       this.setCloudStatus('syncing', 'Salvataggio...');
+      
       // 1. Salva prioritariamente in IndexedDB locale
       await this.db.put(noteObj);
       
-      // 2. Sincronizzazione asincrona con Firebase
-      this.firebase.saveNote(noteObj).catch(e => console.warn('Sync Firebase warning:', e));
+      // 2. Aggiorna immediatamente lo stato locale in memoria
+      const existingIdx = this.notes.findIndex(n => n.id === noteId);
+      if (existingIdx >= 0) {
+        this.notes[existingIdx] = noteObj;
+      } else {
+        this.notes.unshift(noteObj);
+      }
+      this.sortNotes();
 
       // 3. Ricarica e aggiorna interfaccia
-      await this.loadNotes();
       this.render();
       this.updateStorageStats();
       this.closeEditor();
-      this.setCloudStatus('online', 'Sincronizzato');
       this.showToast('Nota salvata con successo!', 'success');
+
+      // 4. Sincronizzazione asincrona con Firebase in background
+      this.firebase.saveNote(noteObj)
+        .then(() => this.setCloudStatus('online', 'Sincronizzato'))
+        .catch(e => {
+          console.warn('Sync Firebase warning:', e);
+          this.setCloudStatus('offline', 'Offline (Salvato in locale)');
+        });
+
     } catch (err) {
       console.error('Errore salvataggio nota:', err);
       this.showToast('Errore durante il salvataggio della nota', 'error');
