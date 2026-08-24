@@ -161,9 +161,9 @@ body {
   transition: transform 0.2s ease;
 }
 
-/* Editor Textarea */
+/* Editor Textarea & Scrollable Container */
 .editor-textarea {
-  min-height: 280px;
+  min-height: 180px;
   resize: vertical;
   line-height: 1.65;
 }
@@ -188,9 +188,23 @@ body {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Responsive Utilities */
+/* Responsive Utilities per Smartphone */
 @media (max-width: 640px) {
+  .editor-modal-card {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 0 !important;
+  }
+  
   .editor-textarea {
-    min-height: calc(100vh - 330px);
+    min-height: 160px;
+  }
+
+  /* Supporto scrolling touch fluido su iOS/Android */
+  .overscroll-contain {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 }
