@@ -146,6 +146,27 @@ body {
   transform: scale(0.95);
 }
 
+/* Voice Recording & FAB Progress */
+.recording-pulse {
+  animation: recordingPulse 1.2s infinite ease-in-out;
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+}
+
+@keyframes recordingPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.animate-bounce-subtle {
+  animation: bounceSubtle 2s infinite ease-in-out;
+}
+
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
 /* Bottom Bar Notch / Shadow */
 .bottom-nav {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
