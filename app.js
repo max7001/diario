@@ -146,7 +146,8 @@ function getDecryptedGeminiKey() {
 }
 
 // Converte Date in valore per input type="datetime-local" (YYYY-MM-DDTHH:mm)
-function toDatetimeLocalValue(dateObj) {
+function toDatetimeLocalValue(dateInput) {
+  let dateObj = parseDateSafe(dateInput);
   const d = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000);
   return d.toISOString().slice(0, 16);
 }
@@ -894,7 +895,15 @@ class AppController {
     if (window.lucide) lucide.createIcons();
   }
 
-  // --- CARICAMENTO DATI ---
+  // --- ORDINAMENTO & CARICAMENTO DATI ---
+  sortNotes() {
+    this.notes.sort((a, b) => {
+      const timeA = a && a.date ? (new Date(a.date).getTime() || 0) : 0;
+      const timeB = b && b.date ? (new Date(b.date).getTime() || 0) : 0;
+      return timeB - timeA;
+    });
+  }
+
   async loadNotes() {
     try {
       const raw = await this.db.getAll();
