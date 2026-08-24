@@ -568,13 +568,38 @@
         </div>
 
         <!-- Galleria Foto della Nota -->
-        <div id="editor-photos-container" class="space-y-2 pt-2 hidden">
-          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <i data-lucide="images" class="w-3.5 h-3.5 text-pink-500"></i>
-            <span>Fotografie allegate (<span id="editor-photos-count">0</span>)</span>
-          </label>
+        <div id="editor-photos-container" class="space-y-3 pt-2 hidden">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="images" class="w-3.5 h-3.5 text-pink-500"></i>
+              <span>Fotografie allegate (<span id="editor-photos-count">0</span>)</span>
+            </label>
+            <button type="button" onclick="document.getElementById('photo-file-input').click()" class="text-xs font-bold text-pink-600 dark:text-pink-400 hover:underline flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Aggiungi foto</span>
+            </button>
+          </div>
+
           <div id="editor-photos-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <!-- Miniatures rendered via JS -->
+          </div>
+
+          <!-- Barra di Azione Rapida Sotto le Fotografie -->
+          <div id="editor-photos-bottom-bar" class="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-2.5 mt-2">
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="document.getElementById('photo-file-input').click()" class="px-3 py-2 bg-pink-50 hover:bg-pink-100 dark:bg-pink-950/40 text-pink-600 dark:text-pink-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-pink-200 dark:border-pink-900/50">
+                <i data-lucide="camera" class="w-4 h-4"></i>
+                <span>+ Altre Foto</span>
+              </button>
+              <button type="button" onclick="app.closeEditor()" class="px-3 py-2 bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                <span>Chiudi</span>
+              </button>
+            </div>
+            <button type="button" onclick="app.saveNote()" class="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all">
+              <i data-lucide="save" class="w-4 h-4 stroke-[2.5]"></i>
+              <span>Salva Nota</span>
+            </button>
           </div>
         </div>
 
