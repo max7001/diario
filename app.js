@@ -48,6 +48,23 @@ function formatFullItalianDate(dateObj) {
   return `${day} ${month} ${year}, ${weekday} ${hours}:${minutes}`;
 }
 
+// ================= SICUREZZA & HASH PROTETTO =================
+// Hash crittografico sicuro unidirezionale SHA-256 (nessuna password in chiaro presente nel codice sorgente)
+const _0xSEC_PIN_HASH = 'da28719dfd9c4da81f433d4788c3d0e10d97180018d0e32b65c967c45661597e';
+
+async function calculateSha256(text) {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    console.error('Crypto API non disponibile:', e);
+    return '';
+  }
+}
+
 // Converte Date in valore per input type="datetime-local" (YYYY-MM-DDTHH:mm)
 function toDatetimeLocalValue(dateObj) {
   const d = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000);
@@ -555,6 +572,9 @@ class AppController {
       } else {
         this.setCloudStatus('offline', 'Offline (Locale)');
       }
+
+      // 3. Inizializzazione Schermata di Blocco PIN
+      this.initLockScreen();
     } catch (e) {
       console.error('Errore inizializzazione app:', e);
       this.showToast('Errore nel caricamento del database', 'error');
@@ -563,6 +583,92 @@ class AppController {
 
     if (window.lucide) {
       lucide.createIcons();
+    }
+  }
+
+  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256) ---
+  initLockScreen() {
+    const isUnlocked = sessionStorage.getItem('app_unlocked') === 'true';
+    const lockScreen = document.getElementById('lock-screen');
+    const pinInput = document.getElementById('lock-pin-input');
+
+    if (isUnlocked) {
+      lockScreen?.classList.add('hidden');
+    } else {
+      lockScreen?.classList.remove('hidden');
+      setTimeout(() => {
+        pinInput?.focus();
+      }, 300);
+    }
+  }
+
+  appendLockDigit(digit) {
+    const pinInput = document.getElementById('lock-pin-input');
+    const errorMsg = document.getElementById('lock-error-msg');
+    if (errorMsg) errorMsg.classList.add('hidden');
+
+    if (pinInput && pinInput.value.length < 8) {
+      pinInput.value += digit;
+      if (pinInput.value.length === 4) {
+        this.verifyAppLockPin();
+      }
+    }
+  }
+
+  clearLockInput() {
+    const pinInput = document.getElementById('lock-pin-input');
+    const errorMsg = document.getElementById('lock-error-msg');
+    if (pinInput) pinInput.value = '';
+    if (errorMsg) errorMsg.classList.add('hidden');
+  }
+
+  backspaceLockInput() {
+    const pinInput = document.getElementById('lock-pin-input');
+    const errorMsg = document.getElementById('lock-error-msg');
+    if (pinInput) {
+      pinInput.value = pinInput.value.slice(0, -1);
+    }
+    if (errorMsg) errorMsg.classList.add('hidden');
+  }
+
+  async verifyAppLockPin() {
+    const pinInput = document.getElementById('lock-pin-input');
+    const errorMsg = document.getElementById('lock-error-msg');
+    const lockCard = document.getElementById('lock-card');
+    const lockScreen = document.getElementById('lock-screen');
+
+    if (!pinInput) return;
+    const enteredPin = pinInput.value.trim();
+    if (!enteredPin) return;
+
+    const enteredHash = await calculateSha256(enteredPin);
+
+    if (enteredHash === _0xSEC_PIN_HASH) {
+      sessionStorage.setItem('app_unlocked', 'true');
+      if (errorMsg) errorMsg.classList.add('hidden');
+      
+      // Animazione di sblocco fluida
+      if (lockScreen) {
+        lockScreen.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        lockScreen.style.opacity = '0';
+        lockScreen.style.pointerEvents = 'none';
+        setTimeout(() => {
+          lockScreen.classList.add('hidden');
+          lockScreen.style.opacity = '';
+          lockScreen.style.pointerEvents = '';
+        }, 300);
+      }
+      this.showToast('Accesso autorizzato!', 'success');
+    } else {
+      if (errorMsg) errorMsg.classList.remove('hidden');
+      if (lockCard) {
+        lockCard.classList.remove('shake');
+        void lockCard.offsetWidth; // Reflow
+        lockCard.classList.add('shake');
+      }
+      setTimeout(() => {
+        pinInput.value = '';
+      }, 400);
     }
   }
 
