@@ -263,11 +263,20 @@ class FirebaseStorageManager {
     const col = this.getNotesCollection();
     if (!col) return;
     try {
-      // Sanitizzazione dati per Firestore
       const cleanNote = { ...note };
+      // Sanitizza per Firestore document limit (1MB max)
+      if (cleanNote.photos && Array.isArray(cleanNote.photos)) {
+        const totalPhotosSize = cleanNote.photos.reduce((acc, p) => acc + (typeof p === 'string' ? p.length : 0), 0);
+        if (totalPhotosSize > 700000) {
+          cleanNote.photos = [];
+        }
+      }
+      if (cleanNote.audio && typeof cleanNote.audio === 'string' && cleanNote.audio.length > 700000) {
+        delete cleanNote.audio;
+      }
       await col.doc(note.id).set(cleanNote, { merge: true });
     } catch (e) {
-      console.error('Errore salvataggio Firebase:', e);
+      console.warn('Avviso salvataggio Firebase (salvato regolarmente in IndexedDB):', e);
     }
   }
 
@@ -277,49 +286,58 @@ class FirebaseStorageManager {
     try {
       await col.doc(id).delete();
     } catch (e) {
-      console.error('Errore eliminazione Firebase:', e);
+      console.warn('Avviso eliminazione Firebase:', e);
     }
   }
 
   async saveBatch(notes) {
     if (!this.db || !notes || notes.length === 0) return;
     try {
-      const BATCH_SIZE = 400;
+      const BATCH_SIZE = 100;
       for (let i = 0; i < notes.length; i += BATCH_SIZE) {
         const chunk = notes.slice(i, i + BATCH_SIZE);
         const batch = this.db.batch();
         const col = this.getNotesCollection();
         chunk.forEach((n) => {
-          const ref = col.doc(n.id);
-          batch.set(ref, n, { merge: true });
+          if (n && n.id) {
+            const cleanNote = { ...n };
+            if (cleanNote.photos && Array.isArray(cleanNote.photos)) {
+              cleanNote.photos = [];
+            }
+            if (cleanNote.audio) {
+              delete cleanNote.audio;
+            }
+            const ref = col.doc(n.id);
+            batch.set(ref, cleanNote, { merge: true });
+          }
         });
         await batch.commit();
       }
     } catch (e) {
-      console.error('Errore batch Firebase:', e);
+      console.warn('Avviso batch Firebase (salvato regolarmente in IndexedDB):', e);
     }
   }
 
   async clearAll(notes) {
     if (!this.db || !notes || notes.length === 0) return;
     try {
-      const BATCH_SIZE = 400;
+      const BATCH_SIZE = 100;
       for (let i = 0; i < notes.length; i += BATCH_SIZE) {
         const chunk = notes.slice(i, i + BATCH_SIZE);
         const batch = this.db.batch();
         const col = this.getNotesCollection();
         chunk.forEach((n) => {
-          batch.delete(col.doc(n.id));
+          if (n && n.id) batch.delete(col.doc(n.id));
         });
         await batch.commit();
       }
     } catch (e) {
-      console.error('Errore clear Firebase:', e);
+      console.warn('Avviso clear Firebase:', e);
     }
   }
 }
 
-// ================= INDEXED DB MANAGER =================
+// ================= INDEXED DB MANAGER (ARCHIVIAZIONE AUTONOMA LOCALE) =================
 class NoteDatabase {
   constructor() {
     this.db = null;
@@ -349,64 +367,97 @@ class NoteDatabase {
   }
 
   async getAll() {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
   async get(id) {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(id);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
   async put(note) {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(note);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(note);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
   async putBatch(notes) {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      for (const note of notes) {
-        store.put(note);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        for (const note of notes) {
+          if (note && note.id) {
+            store.put(note);
+          }
+        }
+        transaction.oncomplete = () => resolve(notes.length);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Transazione interrotta'));
+      } catch (err) {
+        reject(err);
       }
-      transaction.oncomplete = () => resolve(notes.length);
-      transaction.onerror = () => reject(transaction.error);
     });
   }
 
   async delete(id) {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(id);
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.delete(id);
+        request.onsuccess = () => resolve(true);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
   async clear() {
+    if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
-      request.onsuccess = () => resolve(true);
-      request.onerror = () => reject(request.error);
+      try {
+        const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.clear();
+        request.onsuccess = () => resolve(true);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 }
@@ -2508,7 +2559,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     }
 
     const noteObj = {
-      id: this.editingNoteId || 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: this.editingNoteId || ('note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
       title: title,
       content: content,
       date: dateVal.toISOString(),
@@ -2525,8 +2576,13 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
     try {
       this.setCloudStatus('syncing', 'Salvataggio...');
+      // 1. Salva prioritariamente in IndexedDB locale
       await this.db.put(noteObj);
-      await this.firebase.saveNote(noteObj);
+      
+      // 2. Sincronizzazione asincrona con Firebase
+      this.firebase.saveNote(noteObj).catch(e => console.warn('Sync Firebase warning:', e));
+
+      // 3. Ricarica e aggiorna interfaccia
       await this.loadNotes();
       this.render();
       this.updateStorageStats();
@@ -2549,7 +2605,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         try {
           this.setCloudStatus('syncing', 'Eliminazione...');
           await this.db.delete(id);
-          await this.firebase.deleteNote(id);
+          this.firebase.deleteNote(id).catch(e => console.warn('Delete Firebase warning:', e));
           await this.loadNotes();
           this.render();
           this.updateStorageStats();
@@ -2606,7 +2662,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
   // --- IMPORT / EXPORT FUNZIONI ---
   async handleDiaroFileImport(event) {
-    const file = event.target.files[0];
+    const file = event.target.files && event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
@@ -2626,7 +2682,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
           async () => {
             this.setCloudStatus('syncing', 'Importazione...');
             await this.db.putBatch(parsedNotes);
-            await this.firebase.saveBatch(parsedNotes);
+            this.firebase.saveBatch(parsedNotes).catch(e => console.warn('Firebase batch sync warning:', e));
             await this.loadNotes();
             this.render();
             this.updateStorageStats();
@@ -2659,7 +2715,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       if (parsedNotes.length > 0) {
         this.setCloudStatus('syncing', 'Sincronizzazione...');
         await this.db.putBatch(parsedNotes);
-        await this.firebase.saveBatch(parsedNotes);
+        this.firebase.saveBatch(parsedNotes).catch(e => console.warn('Firebase batch sync warning:', e));
         await this.loadNotes();
         this.render();
         this.updateStorageStats();
@@ -2698,7 +2754,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       return;
     }
     const exportData = {
-      app: 'NoteDiarioApp',
+      app: 'MassiNote',
       version: '2.0',
       exportDate: new Date().toISOString(),
       totalNotes: this.notes.length,
@@ -2710,7 +2766,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     const a = document.createElement('a');
     const dateStr = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `backup-note-completo-${dateStr}.json`;
+    a.download = `backup-massinote-${dateStr}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2719,40 +2775,77 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
   }
 
   handleJsonBackupImport(event) {
-    const file = event.target.files[0];
+    const file = event.target.files && event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const data = JSON.parse(e.target.result);
-        const importedNotes = data.notes || data;
-        if (!Array.isArray(importedNotes) || importedNotes.length === 0) {
-          this.showToast('File JSON non valido o vuoto.', 'error');
+        const rawText = e.target.result;
+        const data = JSON.parse(rawText);
+        let rawNotes = Array.isArray(data) ? data : (data.notes || data.data || []);
+        
+        if (!Array.isArray(rawNotes) || rawNotes.length === 0) {
+          this.showToast('File JSON non valido o nessuna nota trovata.', 'error');
           return;
         }
 
+        // Normalizzazione profonda di tutte le proprietà per IndexedDB
+        const normalizedNotes = rawNotes.map((n, idx) => {
+          let noteDate = new Date();
+          if (n.date) {
+            const parsed = new Date(n.date);
+            if (!isNaN(parsed.getTime())) noteDate = parsed;
+          }
+
+          return {
+            id: String(n.id || ('note_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substr(2, 6))),
+            title: String(n.title || n.name || 'Senza Titolo'),
+            content: String(n.content || n.text || n.body || ''),
+            date: noteDate.toISOString(),
+            weather: String(n.weather || ''),
+            location: String(n.location || n.place || ''),
+            folder: String(n.folder || n.category || ''),
+            tags: Array.isArray(n.tags) ? n.tags.map(String) : [],
+            photos: Array.isArray(n.photos) ? n.photos : (Array.isArray(n.images) ? n.images : []),
+            audio: n.audio || null,
+            pinned: Boolean(n.pinned),
+            createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : noteDate.toISOString(),
+            updatedAt: n.updatedAt ? new Date(n.updatedAt).toISOString() : new Date().toISOString()
+          };
+        });
+
         this.openConfirmModal(
           'Ripristina Backup JSON',
-          `Il file contiene ${importedNotes.length} note. Vuoi importarle nel database?`,
+          `Il file contiene ${normalizedNotes.length} note. Vuoi importarle nel tuo archivio?`,
           async () => {
-            this.setCloudStatus('syncing', 'Sincronizzazione...');
-            await this.db.putBatch(importedNotes);
-            await this.firebase.saveBatch(importedNotes);
-            await this.loadNotes();
-            this.render();
-            this.updateStorageStats();
-            this.setCloudStatus('online', 'Sincronizzato');
-            this.showToast(`Ripristinate con successo ${importedNotes.length} note!`, 'success');
-            this.switchView('notes');
+            try {
+              this.setCloudStatus('syncing', 'Importazione...');
+              // 1. Salva le note in IndexedDB locale
+              await this.db.putBatch(normalizedNotes);
+
+              // 2. Sincronizzazione asincrona Firebase
+              this.firebase.saveBatch(normalizedNotes).catch(e => console.warn('Firebase batch sync warning:', e));
+
+              // 3. Ricarica e visualizza le note
+              await this.loadNotes();
+              this.render();
+              this.updateStorageStats();
+              this.setCloudStatus('online', 'Sincronizzato');
+              this.showToast(`Ripristinate con successo ${normalizedNotes.length} note!`, 'success');
+              this.switchView('notes');
+            } catch (importErr) {
+              console.error('Errore durante importazione:', importErr);
+              this.showToast('Errore durante il salvataggio delle note nel database.', 'error');
+            }
           }
         );
       } catch (err) {
-        console.error('Errore import JSON:', err);
-        this.showToast('Errore nella lettura del file JSON', 'error');
+        console.error('Errore lettura JSON:', err);
+        this.showToast('Errore nella lettura o formato JSON non valido.', 'error');
       }
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'UTF-8');
     event.target.value = '';
   }
 
