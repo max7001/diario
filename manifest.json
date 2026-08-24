@@ -1,7 +1,7 @@
 {
-  "name": "Note & Diario",
-  "short_name": "NoteApp",
-  "description": "Applicazione reattiva per appunti e note con supporto foto, calendario, statistiche e importazione Diaro",
+  "name": "MassiNote",
+  "short_name": "MassiNote",
+  "description": "Applicazione rapida ed elegante per note personali con supporto registrazione vocale, intelligenza artificiale, foto, calendario e statistiche",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",

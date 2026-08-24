@@ -1,12 +1,11 @@
 // Service Worker per funzionamento offline
-const CACHE_NAME = 'note-app-cache-v1';
+const CACHE_NAME = 'massinote-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
   './app.js',
-  './manifest.json',
-  './sample-diaro.txt'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
