@@ -1176,12 +1176,13 @@ class AppController {
 
       // Timer conteggio registrazione live
       const timerEl = document.getElementById('voice-recording-timer');
+      if (timerEl) timerEl.textContent = '00:00';
       this.recordingTimerInterval = setInterval(() => {
         const elapsedSec = Math.floor((Date.now() - this.recordingStartTime) / 1000);
         const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
         const secs = String(elapsedSec % 60).padStart(2, '0');
         if (timerEl) timerEl.textContent = `${mins}:${secs}`;
-      }, 500);
+      }, 250);
 
       this.showToast('Registrazione vocale avviata...', 'info');
     } catch (err) {

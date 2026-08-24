@@ -754,23 +754,28 @@
     </div>
   </nav>
 
-  <!-- ================= BANNER FLUTTUANTE REGISTRAZIONE VOCALE IN CORSO ================= -->
-  <div id="voice-recording-banner" class="fixed bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md border border-red-500/50 shadow-2xl rounded-2xl px-5 py-3.5 flex items-center gap-3.5 text-white max-w-sm w-11/12 hidden animate-bounce-subtle">
-    <span class="relative flex h-3.5 w-3.5 shrink-0">
-      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-      <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500"></span>
-    </span>
-    <div class="flex-1 min-w-0">
-      <div class="text-xs font-bold flex items-center justify-between">
-        <span class="text-red-400">Registrazione Vocale</span>
-        <span id="voice-recording-timer" class="font-mono text-sm font-bold text-white">00:00</span>
+  <!-- ================= RIQUADRO CENTRALE REGISTRAZIONE VOCALE (REG + CONTATORE) ================= -->
+  <div id="voice-recording-banner" class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4 hidden">
+    <div class="bg-black/95 border-2 border-red-600 shadow-[0_0_35px_rgba(220,38,38,0.55)] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center gap-2 min-w-[210px] sm:min-w-[250px] text-center scale-in pointer-events-auto">
+      
+      <!-- Scritta REG in Rosso Centrata -->
+      <div class="flex items-center justify-center gap-2.5">
+        <span class="relative flex h-3.5 w-3.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-80"></span>
+          <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600"></span>
+        </span>
+        <span class="text-red-500 font-black text-3xl tracking-widest select-none leading-none">REG</span>
       </div>
-      <p class="text-[11px] text-slate-300 truncate">Tocca il tasto rosso STOP per terminare</p>
+
+      <!-- Contatore Minuti e Secondi in Bianco Centrato -->
+      <div id="voice-recording-timer" class="text-white font-mono text-4xl sm:text-5xl font-bold tracking-wider select-none leading-tight py-0.5">
+        00:00
+      </div>
+
+      <p class="text-[11px] text-slate-300 font-medium tracking-wide mt-1 select-none">
+        Rilascia per terminare
+      </p>
     </div>
-    <button type="button" onclick="app.stopVoiceRecording()" class="p-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md shrink-0 transition-all">
-      <i data-lucide="square" class="w-3.5 h-3.5 fill-current"></i>
-      <span>STOP</span>
-    </button>
   </div>
 
   <!-- ================= MODALE REVISIONE AUDIO REGISTRATO (CESTINO, PLAY, SALVA CON IA) ================= -->
