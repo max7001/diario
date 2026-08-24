@@ -49,7 +49,7 @@
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased select-none sm:select-auto pb-24 md:pb-8">
 
   <!-- ================= TOP HEADER ================= -->
-  <header class="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 transition-colors">
+  <header id="main-header" class="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 transition-colors">
     <div class="max-w-5xl mx-auto flex items-center justify-between gap-3">
       
       <!-- Brand & Titolo -->
@@ -486,15 +486,14 @@
 
   </main>
 
-  <!-- ================= MODALE / SCHERMATA EDITOR NOTA ================= -->
-  <div id="editor-modal" class="fixed inset-0 z-50 bg-black/60 modal-backdrop hidden flex items-center justify-center p-0 sm:p-4 overflow-hidden">
-    <div class="editor-modal-card bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-3xl h-[100dvh] sm:h-[90vh] max-h-[100dvh] sm:max-h-[90vh] flex flex-col shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 overflow-hidden slide-up">
+    <!-- ================= 5. VISTA SCHERMATA EDITOR NOTA (FULL VIEW DEDICATA) ================= -->
+    <section id="view-editor" class="hidden space-y-4 fade-in">
       
-      <!-- Top Action Bar dell'Editor (SEMPRE VISIBILE E FISSA IN ALTO) -->
-      <div class="sticky top-0 z-30 shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shadow-sm">
+      <!-- Top Action Bar dell'Editor (SEMPRE FISSA IN CIMA ALLA SCHERMATA) -->
+      <div id="editor-header" class="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-4 flex items-center justify-between gap-2 shadow-sm transition-colors">
         
         <!-- Back / Cancel Button -->
-        <button onclick="app.closeEditor()" class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all flex items-center gap-1 text-xs font-semibold shrink-0">
+        <button type="button" onclick="app.closeEditor()" class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all flex items-center gap-1 text-xs font-semibold shrink-0">
           <i data-lucide="arrow-left" class="w-5 h-5"></i>
           <span class="hidden sm:inline">Chiudi</span>
         </button>
@@ -509,33 +508,33 @@
           >
         </div>
 
-        <!-- Top Right Actions: Insert Photo & Save -->
+        <!-- Top Right Actions: Insert Photo, Save, Delete -->
         <div class="flex items-center gap-1.5 shrink-0">
           <!-- Hidden file input for photos -->
           <input type="file" id="photo-file-input" accept="image/*" multiple class="hidden" onchange="app.handlePhotoUpload(event)">
           
           <!-- Inserisci Fotografia (simbolino) -->
-          <button onclick="document.getElementById('photo-file-input').click()" class="p-2 rounded-xl text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/40 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold shrink-0" title="Inserisci Fotografia">
+          <button type="button" onclick="document.getElementById('photo-file-input').click()" class="p-2 rounded-xl text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/40 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold shrink-0" title="Inserisci Fotografia">
             <i data-lucide="camera" class="w-5 h-5"></i>
             <span class="hidden sm:inline">Foto</span>
           </button>
 
           <!-- Salva (simbolino/bottone) -->
-          <button onclick="app.saveNote()" class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all shrink-0">
+          <button type="button" onclick="app.saveNote()" class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all shrink-0">
             <i data-lucide="save" class="w-4 h-4 stroke-[2.5]"></i>
             <span>Salva</span>
           </button>
 
           <!-- Options Menu / Delete Button (if existing note) -->
-          <button id="editor-delete-btn" onclick="app.deleteCurrentNote()" class="hidden p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-95 transition-colors shrink-0" title="Elimina nota">
+          <button type="button" id="editor-delete-btn" onclick="app.deleteCurrentNote()" class="hidden p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-95 transition-colors shrink-0" title="Elimina nota">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
         </div>
 
       </div>
 
-      <!-- Editor Body Scrollable (SCORREVOLE IN VERTICALE) -->
-      <div class="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4">
+      <!-- Card Contenuto Editor (Scorre liberamente con la pagina) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 space-y-4">
         
         <!-- Input Titolo -->
         <div>
@@ -549,12 +548,12 @@
 
         <!-- Barra Strumenti Formattazione Rapida -->
         <div class="flex items-center gap-1 text-slate-500 dark:text-slate-400 text-xs overflow-x-auto py-1 border-b border-slate-100 dark:border-slate-800">
-          <button onclick="app.insertEditorFormat('bold')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded font-bold" title="Grassetto">B</button>
-          <button onclick="app.insertEditorFormat('italic')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded italic" title="Corsivo">I</button>
-          <button onclick="app.insertEditorFormat('list')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Elenco puntato"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
-          <button onclick="app.insertEditorFormat('check')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Casella di spunta"><i data-lucide="check-square" class="w-3.5 h-3.5"></i></button>
-          <button onclick="app.insertEditorFormat('divider')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Separatore"><i data-lucide="minus" class="w-3.5 h-3.5"></i></button>
-          <button onclick="app.insertEditorFormat('time')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Inserisci Ora Corrente"><i data-lucide="clock" class="w-3.5 h-3.5"></i></button>
+          <button type="button" onclick="app.insertEditorFormat('bold')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded font-bold" title="Grassetto">B</button>
+          <button type="button" onclick="app.insertEditorFormat('italic')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded italic" title="Corsivo">I</button>
+          <button type="button" onclick="app.insertEditorFormat('list')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Elenco puntato"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
+          <button type="button" onclick="app.insertEditorFormat('check')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Casella di spunta"><i data-lucide="check-square" class="w-3.5 h-3.5"></i></button>
+          <button type="button" onclick="app.insertEditorFormat('divider')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Separatore"><i data-lucide="minus" class="w-3.5 h-3.5"></i></button>
+          <button type="button" onclick="app.insertEditorFormat('time')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded" title="Inserisci Ora Corrente"><i data-lucide="clock" class="w-3.5 h-3.5"></i></button>
           <span class="text-[11px] ml-auto text-slate-400" id="editor-word-count">0 parole</span>
         </div>
 
@@ -574,12 +573,12 @@
             <i data-lucide="images" class="w-3.5 h-3.5 text-pink-500"></i>
             <span>Fotografie allegate (<span id="editor-photos-count">0</span>)</span>
           </label>
-          <div id="editor-photos-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          <div id="editor-photos-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <!-- Miniatures rendered via JS -->
           </div>
         </div>
 
-        <!-- Metadati e Dettagli Aggiuntivi (Meteo, Luogo, Cartella, Tag) -->
+        <!-- Metadati e Dettagli Aggiuntivi (Meteo, Luogo, Cartella) -->
         <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
           
           <div class="flex items-center justify-between cursor-pointer" onclick="app.toggleMetaAccordion()">
@@ -655,8 +654,9 @@
 
       </div>
 
-    </div>
-  </div>
+    </section>
+
+  </main>
 
   <!-- ================= MODALE VISUALIZZATORE FOTO FULLSCREEN ================= -->
   <div id="image-viewer-modal" class="fixed inset-0 z-50 bg-black/90 hidden flex items-center justify-center p-4" onclick="app.closeImageViewer()">
@@ -692,7 +692,7 @@
   </div>
 
   <!-- ================= BARRA INFERIORE DI NAVIGAZIONE (SMARTPHONE & TABLET) ================= -->
-  <nav class="bottom-nav fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/80 dark:border-slate-800/80 px-4 py-2 md:hidden">
+  <nav id="mobile-bottom-bar" class="bottom-nav fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/80 dark:border-slate-800/80 px-4 py-2 md:hidden">
     <div class="max-w-md mx-auto flex items-center justify-around relative">
       
       <!-- Tasto Note (Home) -->

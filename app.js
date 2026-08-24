@@ -637,11 +637,25 @@ class AppController {
   switchView(viewName) {
     this.currentView = viewName;
 
+    const mainHeader = document.getElementById('main-header');
+    const mobileBottomBar = document.getElementById('mobile-bottom-bar');
+
     // Nascondi tutte le sezioni
-    ['view-notes', 'view-calendar', 'view-stats', 'view-settings'].forEach(id => {
+    ['view-notes', 'view-calendar', 'view-stats', 'view-settings', 'view-editor'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.add('hidden');
     });
+
+    if (viewName === 'editor') {
+      // Nella vista editor a schermo intero nascondiamo l'header principale e la nav mobile
+      mainHeader?.classList.add('hidden');
+      mobileBottomBar?.classList.add('hidden');
+      document.body.classList.remove('pb-24');
+    } else {
+      mainHeader?.classList.remove('hidden');
+      mobileBottomBar?.classList.remove('hidden');
+      document.body.classList.add('pb-24');
+    }
 
     // Reset stili bottoni desktop
     ['nav-desktop-notes', 'nav-desktop-calendar', 'nav-desktop-stats', 'nav-desktop-settings'].forEach(id => {
@@ -679,10 +693,7 @@ class AppController {
       if (span) span.className = 'text-[10px] font-bold';
     }
 
-    // Renderizza contenuti specifici della vista
-    if (viewName === 'notes') {
-      this.renderNotesList();
-    } else if (viewName === 'calendar') {
+    if (viewName === 'calendar') {
       this.renderCalendar();
     } else if (viewName === 'stats') {
       this.renderStats();
@@ -690,8 +701,8 @@ class AppController {
       this.updateStorageStats();
     }
 
+    window.scrollTo({ top: 0, behavior: 'instant' });
     if (window.lucide) lucide.createIcons();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // --- FILTRI & RICERCA NOTE ---
@@ -1330,13 +1341,13 @@ class AppController {
     this.renderEditorPhotos();
     this.onEditorContentChange();
 
-    modal?.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    // Passa alla schermata editor a tutto schermo
+    this.switchView('editor');
 
     // Focus automatico sul titolo per nuove note
     setTimeout(() => {
       if (!noteId) titleInput?.focus();
-    }, 100);
+    }, 150);
 
     if (window.lucide) lucide.createIcons();
   }
@@ -1490,11 +1501,9 @@ class AppController {
   }
 
   closeEditor() {
-    const modal = document.getElementById('editor-modal');
-    modal?.classList.add('hidden');
-    document.body.style.overflow = '';
     this.editingNoteId = null;
     this.editorPhotos = [];
+    this.switchView('notes');
   }
 
   onEditorContentChange() {
