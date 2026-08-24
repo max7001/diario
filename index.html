@@ -302,40 +302,106 @@
         </div>
       </div>
 
-      <!-- Distribuzione per Anno / Mese -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
-          <i data-lucide="calendar-range" class="w-4 h-4 text-blue-600"></i>
-          <span>Distribuzione Note per Anno</span>
-        </h3>
-        <div id="stat-years-breakdown" class="space-y-2.5 pt-1">
-          <!-- Rendered via JS -->
+      <!-- Spazio Database (MB) & Utilizzo Token AI Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Spazio Database in MB -->
+        <div class="bg-white dark:bg-slate-900 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+              <i data-lucide="hard-drive" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Spazio Database</span>
+              <span id="stat-db-size" class="text-xl font-extrabold text-slate-900 dark:text-white font-mono leading-tight">0.00 MB</span>
+            </div>
+          </div>
+          <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">IndexedDB</span>
+        </div>
+
+        <!-- Token AI Utilizzati per Audio -->
+        <div class="bg-white dark:bg-slate-900 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+              <i data-lucide="cpu" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Token AI (Audio)</span>
+              <span id="ai-tokens-total-badge" class="text-xl font-extrabold text-purple-600 dark:text-purple-400 font-mono leading-tight">0</span>
+            </div>
+          </div>
+          <span class="text-[11px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-900/60 px-2.5 py-1 rounded-lg">
+            <span id="ai-audio-count-badge">0</span> note vocali
+          </span>
         </div>
       </div>
 
-      <!-- Top Luoghi & Tag -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+      <!-- 1. Distribuzione per Anno (Comprimibile / Esplodibile) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+        <button 
+          type="button" 
+          onclick="app.toggleStatSection('years')" 
+          class="w-full p-4.5 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+        >
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="calendar-range" class="w-4 h-4 text-blue-600"></i>
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Distribuzione Note per Anno</h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="stat-years-count-badge" class="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 rounded-full border border-blue-200 dark:border-blue-900/50">0 Anni</span>
+            <i id="stat-icon-years" data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200"></i>
+          </div>
+        </button>
+        <div id="stat-content-years" class="hidden px-5 pb-5 pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div id="stat-years-breakdown" class="space-y-2.5 pt-2">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Località più frequenti (Comprimibile / Esplodibile) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+        <button 
+          type="button" 
+          onclick="app.toggleStatSection('locations')" 
+          class="w-full p-4.5 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+        >
+          <div class="flex items-center gap-2.5">
             <i data-lucide="map" class="w-4 h-4 text-emerald-600"></i>
-            <span>Località più frequenti</span>
-          </h3>
-          <div id="stat-locations-list" class="space-y-2 text-sm">
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Località più frequenti</h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="stat-locations-count-badge" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900/50">0 Luoghi</span>
+            <i id="stat-icon-locations" data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200"></i>
+          </div>
+        </button>
+        <div id="stat-content-locations" class="hidden px-5 pb-5 pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div id="stat-locations-list" class="space-y-2 text-sm pt-2">
             <!-- Rendered via JS -->
           </div>
         </div>
+      </div>
 
-        <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+      <!-- 3. Cartelle & Categorie (Comprimibile / Esplodibile) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all">
+        <button 
+          type="button" 
+          onclick="app.toggleStatSection('folders')" 
+          class="w-full p-4.5 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+        >
+          <div class="flex items-center gap-2.5">
             <i data-lucide="folder" class="w-4 h-4 text-indigo-600"></i>
-            <span>Cartelle & Categorie</span>
-          </h3>
-          <div id="stat-folders-list" class="space-y-2 text-sm">
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Cartelle & Categorie</h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="stat-folders-count-badge" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-900/50">0 Cartelle</span>
+            <i id="stat-icon-folders" data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200"></i>
+          </div>
+        </button>
+        <div id="stat-content-folders" class="hidden px-5 pb-5 pt-1 border-t border-slate-100 dark:border-slate-800">
+          <div id="stat-folders-list" class="space-y-2 text-sm pt-2">
             <!-- Rendered via JS -->
           </div>
         </div>
-
       </div>
 
     </section>
@@ -420,33 +486,7 @@
 
       </div>
 
-      <!-- 3. Utilizzo Token AI per Elaborazione Vocale -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
-            <i data-lucide="cpu" class="w-4 h-4 text-purple-500"></i>
-            <span>Utilizzo Token AI (Elaborazione Audio)</span>
-          </h3>
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-900/60">
-            Gemini AI
-          </span>
-        </div>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          Monitoraggio dei token totali utilizzati per la trascrizione e la sintesi intelligente dei messaggi vocali.
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-600 dark:text-slate-400">Token Totali Utilizzati</span>
-            <span id="ai-tokens-total-badge" class="font-mono text-sm font-bold text-purple-600 dark:text-purple-400">0</span>
-          </div>
-          <div class="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-600 dark:text-slate-400">File Audio Elaborati</span>
-            <span id="ai-audio-count-badge" class="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">0</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 4. Gestione Memoria Locale (Spazio DB in MB) & Reset -->
+      <!-- 3. Gestione Memoria Locale (IndexedDB) & Reset -->
       <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
         <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
           <i data-lucide="hard-drive" class="w-4 h-4 text-slate-500"></i>
@@ -455,8 +495,8 @@
         
         <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl">
           <div>
-            <span class="font-semibold block text-slate-800 dark:text-slate-200">Spazio Occupato dal Database</span>
-            <span id="storage-db-size" class="text-blue-600 dark:text-blue-400 font-bold font-mono text-sm">0.00 MB</span>
+            <span class="font-semibold block text-slate-800 dark:text-slate-200">Stato Database Locale</span>
+            <span class="text-slate-500 dark:text-slate-400">IndexedDB attivo e persistente</span>
           </div>
           <div id="storage-usage-badge" class="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 font-semibold">
             0 note archiviate
@@ -470,6 +510,13 @@
           </button>
         </div>
 
+      </div>
+
+      <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
+      <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
+        <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.11</span>
+        </p>
       </div>
 
     </section>

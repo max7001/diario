@@ -4,6 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
+const APP_VERSION = '2.11';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -706,6 +707,10 @@ class AppController {
       // 1. Inizializzazione archivio locale (IndexedDB)
       await this.db.init();
       this.initTheme();
+      
+      const versionEl = document.getElementById('app-version-badge');
+      if (versionEl) versionEl.textContent = APP_VERSION;
+
       await this.loadNotes();
       this.initEventListeners();
       this.render();
@@ -2225,13 +2230,23 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     return country || cleanCity || str;
   }
 
+  toggleStatSection(key) {
+    const content = document.getElementById(`stat-content-${key}`);
+    const icon = document.getElementById(`stat-icon-${key}`);
+    if (!content) return;
+    const isHidden = content.classList.toggle('hidden');
+    if (icon) {
+      icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+    }
+  }
+
   // --- STATISTICHE ---
   renderStats() {
     const totalNotes = this.notes.length;
     const withPhotos = this.notes.filter(n => n.photos && n.photos.length > 0).length;
     const pctPhotos = totalNotes > 0 ? Math.round((withPhotos / totalNotes) * 100) : 0;
 
-    // Conteggio parole
+    // Conteggio parole e raggruppamenti
     let totalWords = 0;
     const locationsMap = {};
     const foldersMap = {};
@@ -2278,19 +2293,40 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     const avgWords = totalNotes > 0 ? Math.round(totalWords / totalNotes) : 0;
     const avgTemp = tempCount > 0 ? (tempSum / tempCount).toFixed(1) + '°C' : 'N/D';
 
-    // Aggiorna KPI DOM
-    document.getElementById('stat-total-notes').textContent = totalNotes;
-    document.getElementById('stat-photos-notes').textContent = withPhotos;
-    document.getElementById('stat-photos-pct').textContent = `${pctPhotos}% delle note`;
-    document.getElementById('stat-total-words').textContent = totalWords.toLocaleString('it-IT');
-    document.getElementById('stat-avg-words').textContent = `Media: ${avgWords} parole/nota`;
-    document.getElementById('stat-locations-count').textContent = Object.keys(locationsMap).length;
-    document.getElementById('stat-avg-temp').textContent = tempCount > 0 ? `Temp. media: ${avgTemp}` : 'Nessun dato meteo';
+    // Aggiorna KPI DOM Principali
+    const totalNotesEl = document.getElementById('stat-total-notes');
+    if (totalNotesEl) totalNotesEl.textContent = totalNotes;
 
-    // Ripartizione Anni
+    const photosNotesEl = document.getElementById('stat-photos-notes');
+    if (photosNotesEl) photosNotesEl.textContent = withPhotos;
+
+    const photosPctEl = document.getElementById('stat-photos-pct');
+    if (photosPctEl) photosPctEl.textContent = `${pctPhotos}% delle note`;
+
+    const totalWordsEl = document.getElementById('stat-total-words');
+    if (totalWordsEl) totalWordsEl.textContent = totalWords.toLocaleString('it-IT');
+
+    const avgWordsEl = document.getElementById('stat-avg-words');
+    if (avgWordsEl) avgWordsEl.textContent = `Media: ${avgWords} parole/nota`;
+
+    const locationsCountEl = document.getElementById('stat-locations-count');
+    if (locationsCountEl) locationsCountEl.textContent = Object.keys(locationsMap).length;
+
+    const avgTempEl = document.getElementById('stat-avg-temp');
+    if (avgTempEl) avgTempEl.textContent = tempCount > 0 ? `Temp. media: ${avgTemp}` : 'Nessun dato meteo';
+
+    // Aggiorna Spazio DB e Token AI
+    this.updateStorageStats();
+
+    // 1. Ripartizione Anni
+    const sortedYears = Object.keys(yearsMap).sort((a, b) => b - a);
+    const yearsBadge = document.getElementById('stat-years-count-badge');
+    if (yearsBadge) {
+      yearsBadge.textContent = `${sortedYears.length} ${sortedYears.length === 1 ? 'Anno' : 'Anni'}`;
+    }
+
     const yearsContainer = document.getElementById('stat-years-breakdown');
     if (yearsContainer) {
-      const sortedYears = Object.keys(yearsMap).sort((a, b) => b - a);
       const maxYearCount = Math.max(1, ...Object.values(yearsMap));
 
       if (sortedYears.length === 0) {
@@ -2314,15 +2350,21 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       }
     }
 
-    // Top Luoghi
+    // 2. Top Luoghi
+    const topLocations = Object.entries(locationsMap).sort((a, b) => b[1] - a[1]);
+    const locationsBadge = document.getElementById('stat-locations-count-badge');
+    if (locationsBadge) {
+      locationsBadge.textContent = `${topLocations.length} ${topLocations.length === 1 ? 'Luogo' : 'Luoghi'}`;
+    }
+
     const locContainer = document.getElementById('stat-locations-list');
     if (locContainer) {
-      const topLocations = Object.entries(locationsMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-      if (topLocations.length === 0) {
+      const displayLocations = topLocations.slice(0, 10);
+      if (displayLocations.length === 0) {
         locContainer.innerHTML = `<p class="text-xs text-slate-400 italic">Nessun luogo registrato nelle note.</p>`;
       } else {
-        locContainer.innerHTML = topLocations.map(([loc, cnt]) => `
-          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl">
+        locContainer.innerHTML = displayLocations.map(([loc, cnt]) => `
+          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl">
             <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate pr-2 flex items-center gap-1.5">
               <i data-lucide="map-pin" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
               <span class="truncate">${escapeHtml(loc)}</span>
@@ -2335,15 +2377,21 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       }
     }
 
-    // Top Cartelle
+    // 3. Top Cartelle
+    const topFolders = Object.entries(foldersMap).sort((a, b) => b[1] - a[1]);
+    const foldersBadge = document.getElementById('stat-folders-count-badge');
+    if (foldersBadge) {
+      foldersBadge.textContent = `${topFolders.length} ${topFolders.length === 1 ? 'Cartella' : 'Cartelle'}`;
+    }
+
     const folderContainer = document.getElementById('stat-folders-list');
     if (folderContainer) {
-      const topFolders = Object.entries(foldersMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
-      if (topFolders.length === 0) {
+      const displayFolders = topFolders.slice(0, 10);
+      if (displayFolders.length === 0) {
         folderContainer.innerHTML = `<p class="text-xs text-slate-400 italic">Nessuna cartella o categoria specificata.</p>`;
       } else {
-        folderContainer.innerHTML = topFolders.map(([f, cnt]) => `
-          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl">
+        folderContainer.innerHTML = displayFolders.map(([f, cnt]) => `
+          <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl">
             <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate pr-2 flex items-center gap-1.5">
               <i data-lucide="folder" class="w-3.5 h-3.5 text-indigo-500 shrink-0"></i>
               <span class="truncate">${escapeHtml(f)}</span>
@@ -3189,8 +3237,6 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 
   async updateStorageStats() {
     const badge = document.getElementById('storage-usage-badge');
-    const sizeEl = document.getElementById('storage-db-size');
-    
     if (badge) {
       badge.textContent = `${this.notes.length} note archiviate`;
     }
@@ -3229,8 +3275,9 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     }
 
     const megabytes = (totalBytes / (1024 * 1024)).toFixed(2);
-    if (sizeEl) {
-      sizeEl.textContent = `${megabytes} MB`;
+    const statDbSizeEl = document.getElementById('stat-db-size');
+    if (statDbSizeEl) {
+      statDbSizeEl.textContent = `${megabytes} MB`;
     }
   }
 
