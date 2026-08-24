@@ -897,12 +897,49 @@ class AppController {
   // --- CARICAMENTO DATI ---
   async loadNotes() {
     try {
-      this.notes = await this.db.getAll();
+      const raw = await this.db.getAll();
+      this.notes = (raw || []).map(n => this.sanitizeNote(n)).filter(Boolean);
       this.sortNotes();
     } catch (e) {
       console.error('Errore lettura note:', e);
       this.notes = [];
     }
+  }
+
+  sanitizeNote(n) {
+    if (!n || typeof n !== 'object') return null;
+    
+    let title = n.title;
+    if (typeof title === 'object' && title !== null) {
+      title = title.title || title.name || JSON.stringify(title);
+    }
+    title = String(title || 'Senza Titolo').trim();
+
+    let content = n.content !== undefined ? n.content : (n.text || '');
+    if (typeof content === 'object' && content !== null) {
+      content = content.summary || content.content || JSON.stringify(content, null, 2);
+    }
+    content = String(content || '').trim();
+
+    let weather = typeof n.weather === 'string' ? n.weather : '';
+    let location = typeof n.location === 'string' ? n.location : '';
+    let folder = typeof n.folder === 'string' ? n.folder : '';
+
+    return {
+      id: String(n.id || ('note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6))),
+      title: title || 'Senza Titolo',
+      content: content,
+      date: n.date ? String(n.date) : new Date().toISOString(),
+      weather: weather,
+      location: location,
+      folder: folder,
+      tags: Array.isArray(n.tags) ? n.tags.map(String) : [],
+      photos: Array.isArray(n.photos) ? n.photos : [],
+      audio: typeof n.audio === 'string' ? n.audio : null,
+      pinned: Boolean(n.pinned),
+      createdAt: n.createdAt ? String(n.createdAt) : new Date().toISOString(),
+      updatedAt: n.updatedAt ? String(n.updatedAt) : new Date().toISOString()
+    };
   }
 
   async mergeCloudNotes(cloudNotes) {
@@ -1289,10 +1326,17 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
           if (candidateText) {
             try {
               const parsed = JSON.parse(candidateText);
-              aiTitle = parsed.title || aiTitle;
-              aiSummary = parsed.summary || parsed.content || candidateText;
+              if (parsed.title) {
+                aiTitle = typeof parsed.title === 'string' ? parsed.title : (parsed.title.title || JSON.stringify(parsed.title));
+              }
+              if (parsed.summary || parsed.content || parsed.text) {
+                const s = parsed.summary || parsed.content || parsed.text;
+                aiSummary = typeof s === 'string' ? s : JSON.stringify(s, null, 2);
+              } else {
+                aiSummary = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+              }
             } catch (e) {
-              aiSummary = candidateText;
+              aiSummary = String(candidateText);
             }
           }
         } else {
@@ -1309,10 +1353,17 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
             if (fbText) {
               try {
                 const parsed = JSON.parse(fbText);
-                aiTitle = parsed.title || aiTitle;
-                aiSummary = parsed.summary || parsed.content || fbText;
+                if (parsed.title) {
+                  aiTitle = typeof parsed.title === 'string' ? parsed.title : (parsed.title.title || JSON.stringify(parsed.title));
+                }
+                if (parsed.summary || parsed.content || parsed.text) {
+                  const s = parsed.summary || parsed.content || parsed.text;
+                  aiSummary = typeof s === 'string' ? s : JSON.stringify(s, null, 2);
+                } else {
+                  aiSummary = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+                }
               } catch (e) {
-                aiSummary = fbText;
+                aiSummary = String(fbText);
               }
             }
           }
@@ -1321,9 +1372,8 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         console.error('Errore chiamata Gemini API:', geminiErr);
       }
 
-      if (!aiSummary) {
-        aiSummary = 'Registrazione vocale allegata alla nota.';
-      }
+      aiTitle = String(aiTitle || 'Nota Vocale').trim();
+      aiSummary = String(aiSummary || 'Registrazione vocale allegata alla nota.').trim();
 
       // 3. Rilevamento automatico Posizione GPS e Meteo
       let autoLocation = '';
@@ -1345,10 +1395,10 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
         title: aiTitle,
         content: aiSummary,
-        audio: this.recordedAudioBase64,
+        audio: typeof this.recordedAudioBase64 === 'string' ? this.recordedAudioBase64 : null,
         date: new Date().toISOString(),
-        weather: autoWeather,
-        location: autoLocation,
+        weather: String(autoWeather || ''),
+        location: String(autoLocation || ''),
         folder: 'Vocali',
         tags: ['audio', 'ia'],
         photos: [],
@@ -1358,19 +1408,32 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       };
 
       this.setCloudStatus('syncing', 'Salvataggio...');
+      
+      // Salva prima in IndexedDB
       await this.db.put(newNote);
-      await this.firebase.saveNote(newNote);
-      await this.loadNotes();
+      
+      // Aggiorna array in memoria
+      this.notes.unshift(newNote);
+      this.sortNotes();
+
+      // Renderizza e aggiorna viste
       this.render();
       this.updateStorageStats();
-      this.setCloudStatus('online', 'Sincronizzato');
+      this.switchView('notes');
 
       // Chiudi modale e pulisci
       modal?.classList.add('hidden');
       this.recordedAudioBlob = null;
       this.recordedAudioBase64 = null;
       this.showToast('Nota vocale analizzata e salvata con successo!', 'success');
-      this.switchView('notes');
+
+      // Sincronizza Firebase in background
+      this.firebase.saveNote(newNote)
+        .then(() => this.setCloudStatus('online', 'Sincronizzato'))
+        .catch(e => {
+          console.warn('Sync Firebase note error:', e);
+          this.setCloudStatus('offline', 'Offline (Salvato in locale)');
+        });
     } catch (err) {
       console.error('Errore elaborazione nota vocale:', err);
       this.showToast('Errore durante l\'analisi con l\'Intelligenza Artificiale', 'error');
