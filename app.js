@@ -1661,7 +1661,30 @@ class AppController {
     this.onEditorContentChange();
   }
 
-  // --- GESTIONE FOTOGRAFIE NELL'EDITOR ---
+  // --- GESTIONE FOTOGRAFIE NELL'EDITOR (FOTOCAMERA / GALLERIA) ---
+  openPhotoSourceModal() {
+    const modal = document.getElementById('photo-source-modal');
+    modal?.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  closePhotoSourceModal() {
+    const modal = document.getElementById('photo-source-modal');
+    modal?.classList.add('hidden');
+  }
+
+  triggerPhotoCamera() {
+    this.closePhotoSourceModal();
+    const cameraInput = document.getElementById('photo-camera-input');
+    cameraInput?.click();
+  }
+
+  triggerPhotoGallery() {
+    this.closePhotoSourceModal();
+    const galleryInput = document.getElementById('photo-gallery-input');
+    galleryInput?.click();
+  }
+
   async handlePhotoUpload(event) {
     const files = event.target.files;
     if (!files || files.length === 0) return;

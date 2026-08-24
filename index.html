@@ -484,12 +484,10 @@
 
     </section>
 
-  </main>
-
     <!-- ================= 5. VISTA SCHERMATA EDITOR NOTA (FULL VIEW DEDICATA) ================= -->
-    <section id="view-editor" class="hidden space-y-4 fade-in">
+    <section id="view-editor" class="hidden space-y-4 fade-in pb-12">
       
-      <!-- Top Action Bar dell'Editor (SEMPRE FISSA IN CIMA ALLA SCHERMATA) -->
+      <!-- Top Action Bar dell'Editor (SEMPRE FISSA A FILO IN CIMA ALLA SCHERMATA SENZA ALCUNO SPAZIO VUOTO) -->
       <div id="editor-header" class="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-4 flex items-center justify-between gap-2 shadow-sm transition-colors">
         
         <!-- Back / Cancel Button -->
@@ -510,11 +508,13 @@
 
         <!-- Top Right Actions: Insert Photo, Save, Delete -->
         <div class="flex items-center gap-1.5 shrink-0">
-          <!-- Hidden file input for photos -->
-          <input type="file" id="photo-file-input" accept="image/*" multiple class="hidden" onchange="app.handlePhotoUpload(event)">
+          <!-- Hidden file input for gallery (multiple) -->
+          <input type="file" id="photo-gallery-input" accept="image/*" multiple class="hidden" onchange="app.handlePhotoUpload(event)">
+          <!-- Hidden file input for live camera capture (smartphone/tablet) -->
+          <input type="file" id="photo-camera-input" accept="image/*" capture="environment" class="hidden" onchange="app.handlePhotoUpload(event)">
           
-          <!-- Inserisci Fotografia (simbolino) -->
-          <button type="button" onclick="document.getElementById('photo-file-input').click()" class="p-2 rounded-xl text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/40 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold shrink-0" title="Inserisci Fotografia">
+          <!-- Inserisci Fotografia (apre scelta tra Scatta Foto o Galleria) -->
+          <button type="button" onclick="app.openPhotoSourceModal()" class="p-2 rounded-xl text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/40 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold shrink-0" title="Inserisci Fotografia (Scatta o Galleria)">
             <i data-lucide="camera" class="w-5 h-5"></i>
             <span class="hidden sm:inline">Foto</span>
           </button>
@@ -728,6 +728,53 @@
 
     </div>
   </nav>
+
+  <!-- ================= MODALE SCELTA FOTO: FOTOCAMERA O GALLERIA ================= -->
+  <div id="photo-source-modal" class="fixed inset-0 z-50 bg-black/60 modal-backdrop hidden flex items-end sm:items-center justify-center p-0 sm:p-4" onclick="app.closePhotoSourceModal(event)">
+    <div class="bg-white dark:bg-slate-900 w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 scale-in" onclick="event.stopPropagation()">
+      
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+          <i data-lucide="camera" class="w-4 h-4 text-pink-500"></i>
+          <span>Aggiungi Fotografia</span>
+        </h3>
+        <button type="button" onclick="app.closePhotoSourceModal()" class="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 gap-2.5">
+        <!-- Opzione 1: Scatta Foto con Fotocamera Hardware (Smartphone / Tablet) -->
+        <button 
+          type="button" 
+          onclick="app.triggerPhotoCamera()" 
+          class="w-full p-3.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 active:scale-98 text-white rounded-2xl font-bold text-xs shadow-md shadow-pink-500/20 flex items-center justify-center gap-2.5 transition-all"
+        >
+          <i data-lucide="camera" class="w-5 h-5"></i>
+          <span>Scatta con la Fotocamera</span>
+        </button>
+
+        <!-- Opzione 2: Scegli da Galleria / Rullino -->
+        <button 
+          type="button" 
+          onclick="app.triggerPhotoGallery()" 
+          class="w-full p-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-98 text-slate-800 dark:text-slate-200 rounded-2xl font-bold text-xs transition-all flex items-center justify-center gap-2.5 border border-slate-200/80 dark:border-slate-700"
+        >
+          <i data-lucide="image" class="w-5 h-5 text-indigo-500"></i>
+          <span>Scegli da Galleria / Rullino</span>
+        </button>
+      </div>
+
+      <button 
+        type="button" 
+        onclick="app.closePhotoSourceModal()" 
+        class="w-full py-2.5 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700"
+      >
+        Annulla
+      </button>
+
+    </div>
+  </div>
 
   <!-- ================= SCHERMATA DI SBLOCCO (LOCK SCREEN CON PIN PROTETTO) ================= -->
   <div id="lock-screen" class="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4">
