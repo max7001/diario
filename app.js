@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.12';
+const APP_VERSION = '2.13';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -1051,6 +1051,7 @@ class AppController {
         pressTimer = setTimeout(() => {
           isLongPressed = true;
           isRecordingTriggered = true;
+          this.isLongPressRecording = true;
           cleanupHold();
           
           // Feedback aptico (vibrazione)
@@ -1068,14 +1069,14 @@ class AppController {
 
         // Se la registrazione era stata avviata dalla pressione prolungata, si interrompe al rilascio del tasto
         if (isRecordingTriggered || this.isRecording) {
-          if (this.isRecording) {
+          if (this.isRecording && this.isLongPressRecording) {
             this.stopVoiceRecording();
           }
           isRecordingTriggered = false;
-          // Lasciamo isLongPressed a true per bloccare l'evento click successivo
+          isLongPressed = true;
           setTimeout(() => {
             isLongPressed = false;
-          }, 200);
+          }, 800);
         }
       };
 
@@ -1103,7 +1104,7 @@ class AppController {
       });
       btn.addEventListener('pointerleave', () => {
         // Se esce dal pulsante mentre sta tenendo premuto durante la registrazione, ferma la registrazione
-        if (isRecordingTriggered && this.isRecording) {
+        if (isRecordingTriggered && this.isRecording && this.isLongPressRecording) {
           handleRelease();
         }
       });
@@ -1111,8 +1112,10 @@ class AppController {
       // Click Event (per tocco rapido normale < 2 secondi)
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        if (isLongPressed) {
+        e.stopPropagation();
+        if (isLongPressed || isRecordingTriggered || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 800)) {
           isLongPressed = false;
+          isRecordingTriggered = false;
           return;
         }
         if (this.isRecording) {
@@ -1128,7 +1131,7 @@ class AppController {
 
     // Rilascio globale a livello di finestra per massima sicurezza
     window.addEventListener('pointerup', () => {
-      if (this.isRecording) {
+      if (this.isRecording && this.isLongPressRecording) {
         this.stopVoiceRecording();
       }
     });
@@ -1182,8 +1185,16 @@ class AppController {
   }
 
   // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
-  // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
   async startVoiceRecording(isResuming = false) {
+    // Rimuovi qualsiasi focus da campi di testo per evitare apertura tastiera mobile
+    if (document.activeElement) {
+      try { document.activeElement.blur(); } catch (e) {}
+    }
+
+    if (this.currentView === 'editor') {
+      this.closeEditor();
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -1247,6 +1258,12 @@ class AppController {
       // UI: trasforma il pulsante in STOP rosso e mostra il banner
       this.updateRecordingUI(true);
 
+      // Aggiorna istruzione banner a seconda della modalità
+      const instEl = document.getElementById('voice-recording-instruction');
+      if (instEl) {
+        instEl.textContent = isResuming ? 'Tocca STOP per terminare' : 'Tocca STOP o rilascia per terminare';
+      }
+
       // Timer conteggio registrazione live (continua dalla durata precedentemente accumulata)
       const timerEl = document.getElementById('voice-recording-timer');
       const startOffset = this.accumulatedDurationSec;
@@ -1271,14 +1288,24 @@ class AppController {
   }
 
   resumeVoiceRecording() {
+    this.isLongPressRecording = false; // Modalità manuale: continua a registrare finché non si preme STOP
     this.closeVoiceReviewModal();
+    if (document.activeElement) {
+      try { document.activeElement.blur(); } catch (e) {}
+    }
     this.startVoiceRecording(true);
   }
 
   stopVoiceRecording() {
     if (!this.isRecording) return;
     this.isRecording = false;
+    this.isLongPressRecording = false;
+    this.lastVoiceRecordingEndTime = Date.now();
     
+    if (document.activeElement) {
+      try { document.activeElement.blur(); } catch (e) {}
+    }
+
     // Suono acustico di fine registrazione
     this.playRecordingSound('stop');
 
@@ -1547,13 +1574,17 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       // Renderizza e aggiorna viste
       this.render();
       this.updateStorageStats();
-      this.switchView('notes');
 
-      // Chiudi modale e pulisci
-      modal?.classList.add('hidden');
+      // Chiudi modale di revisione audio e pulisci buffer
+      this.closeVoiceReviewModal();
+      this.recordedAudioBlobs = [];
+      this.accumulatedDurationSec = 0;
       this.recordedAudioBlob = null;
       this.recordedAudioBase64 = null;
-      this.showToast('Nota vocale analizzata e salvata con successo!', 'success');
+      this.showToast('Nota vocale creata con successo!', 'success');
+
+      // Apre direttamente la nuova nota nell'editor con titolo e testo compilati da Gemini
+      this.openEditor(newNote.id);
 
       // Sincronizza Firebase in background
       this.firebase.saveNote(newNote)
