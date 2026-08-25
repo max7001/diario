@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.13';
+const APP_VERSION = '2.16';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -47,6 +47,36 @@ function formatFullItalianDate(dateObj) {
   const hours = String(dateObj.getHours()).padStart(2, '0');
   const minutes = String(dateObj.getMinutes()).padStart(2, '0');
   return `${day} ${month} ${year}, ${weekday} ${hours}:${minutes}`;
+}
+
+// Helper per pulire e formattare il testo generato dall'AI senza artefatti Markdown (* e #)
+function cleanAiFormatting(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  
+  let cleaned = text;
+
+  // 1. Converti elenchi puntati con asterisco (* elemento) in pallini puliti (• elemento)
+  cleaned = cleaned.replace(/^[ \t]*\*[ \t]+/gm, '• ');
+
+  // 2. Rimuovi titoli markdown come #, ##, ### all'inizio di riga preservando il testo
+  cleaned = cleaned.replace(/^[ \t]*#+[ \t]*/gm, '');
+
+  // 3. Rimuovi asterischi per grassetto / corsivo (es. ***testo***, **testo**, *testo*)
+  cleaned = cleaned.replace(/\*{1,3}(.*?)\*{1,3}/g, '$1');
+
+  // 4. Rimuovi underscore per grassetto / corsivo (es. __testo__, _testo_)
+  cleaned = cleaned.replace(/_{1,3}(.*?)_{1,3}/g, '$1');
+
+  // 5. Rimuovi eventuali cancelletti isolati o rimasti
+  cleaned = cleaned.replace(/#+/g, '');
+
+  // 6. Rimuovi eventuali asterischi sparsi rimasti
+  cleaned = cleaned.replace(/\*/g, '');
+
+  // 7. Normalizza righe vuote multiple (massimo 2 a capo)
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  return cleaned.trim();
 }
 
 // ================= SICUREZZA & HASH PROTETTO =================
@@ -135,15 +165,36 @@ function calculateSha256(str) {
   return result;
 }
 
-// Recupero sicuro della chiave API Google Gemini (completamente crittografata nel codice sorgente)
+// ================= SICUREZZA, VAULT CIFRATO & CHIAVI DINAMICHE =================
+// Nessun dato riservato, chiave API o configurazione è presente in chiaro nel codice sorgente
+const _0xSEC_VAULT = [214, 74, 98, 91, 181, 245, 187, 73, 133, 128, 229, 142, 2, 97, 217, 247, 9, 75, 21, 143, 10, 7, 80, 208, 156, 225, 121, 35, 128, 68, 165, 82, 179, 64, 175, 82, 224, 68, 156, 91, 3, 196, 91, 115, 79, 222, 10, 221, 119, 159, 36, 230, 53, 106, 81, 238, 37, 28, 39, 123, 153, 86, 113, 48, 215, 179, 227, 81, 222, 140, 200, 157, 119, 42, 140, 195, 94, 7, 51, 247, 44, 251, 88, 238, 133, 201, 101, 30, 180, 125, 242, 23, 130, 11, 191, 66, 255, 45, 134, 120, 4, 202, 26, 98, 247, 239, 22, 168, 68, 198, 172, 149, 49, 59, 101, 193, 73, 56, 114, 23, 140, 228, 62, 107, 143, 197, 210, 58, 207, 212, 206, 141, 4, 125, 204, 136, 102, 224, 32, 136, 118, 244, 32, 185, 209, 152, 118, 250, 147, 112, 153, 227, 144, 84, 167, 66, 250, 63, 149, 81, 161, 129, 167, 60, 242, 189, 241, 254, 86, 130, 233, 160, 107, 50, 14, 217, 64, 7, 48, 14, 184, 162, 78, 52, 201, 150, 221, 55, 184, 96, 202, 127, 2, 90, 165, 158, 50, 161, 58, 130, 23, 131, 121, 135, 43, 169, 5, 230, 128, 74, 144, 231, 109, 90, 162, 38, 203, 4, 153, 67, 198, 163, 177, 16, 191, 251, 185, 230, 115, 196, 172, 245, 25, 87, 23, 255, 13, 76, 11, 87, 253, 186, 85, 25, 183, 182, 175, 64, 237, 49, 231, 38, 67, 0, 233, 55, 91, 175, 95, 204, 71, 149, 88, 133, 44, 234, 27, 196, 157, 13, 103, 168, 106, 123, 200, 118, 213, 91, 60, 15, 255, 231, 169, 0, 154, 209, 251, 221, 123, 109, 145, 225, 21, 67, 27, 240, 42, 228, 84, 244, 156, 214, 37, 24, 182, 101, 163, 39, 135, 63, 235, 3, 167, 7, 241, 93, 55, 229, 55, 90, 74, 232, 84, 141, 113, 254, 5, 129, 43, 97, 104, 195, 118, 60, 103, 50, 159, 66, 52, 107, 230, 142, 133, 3, 213, 201, 247, 185, 111, 94, 210, 182, 41, 12, 44, 243, 6, 160, 9, 192, 160, 211, 26, 219, 154, 77, 128, 28, 172, 79, 148, 25, 245, 22, 140, 68, 28, 196, 50, 111, 227, 148, 73, 173, 102, 160, 220, 192, 65, 2, 40, 254, 64, 67, 104];
+const _0xSEC_SALT = [173, 91, 234, 18, 99, 142, 77, 215, 63, 108, 19, 88];
+
+let _cachedSecData = null;
+function _getDecryptedCredentials() {
+  if (_cachedSecData) return _cachedSecData;
+  try {
+    const chars = [];
+    for (let i = 0; i < _0xSEC_VAULT.length; i++) {
+      const k = (_0xSEC_SALT[i % _0xSEC_SALT.length] + ((i * 13) % 256)) % 256;
+      chars.push(String.fromCharCode(_0xSEC_VAULT[i] ^ k));
+    }
+    _cachedSecData = JSON.parse(chars.join(''));
+    return _cachedSecData;
+  } catch (e) {
+    console.error('Credential vault error:', e);
+    return { fb: {}, gemini: '' };
+  }
+}
+
 function getDecryptedGeminiKey() {
   const customKey = localStorage.getItem('massinote_custom_gemini_key');
   if (customKey && customKey.trim()) return customKey.trim();
+  return _getDecryptedCredentials().gemini || '';
+}
 
-  // Chiave API crittografata con maschera a livello di byte (invisibile in chiaro nel codice)
-  const enc = [12, 48, 93, 50, 11, 118, 61, 58, 83, 25, 7, 48, 31, 5, 14, 102, 48, 84, 122, 99, 103, 85, 27, 59, 54, 41, 10, 40, 44, 18, 44, 101, 1, 57, 17, 43, 2, 60, 40, 0, 90, 97, 2, 80, 6, 41, 43, 10, 63, 3, 92, 56, 2];
-  const mask = 'MassiNoteSecureKey2026';
-  return enc.map((b, i) => String.fromCharCode(b ^ mask.charCodeAt(i % mask.length))).join('');
+function getDecryptedFirebaseConfig() {
+  return _getDecryptedCredentials().fb || {};
 }
 
 // Converte Date in valore per input type="datetime-local" (YYYY-MM-DDTHH:mm)
@@ -174,17 +225,7 @@ function parseDateSafe(input) {
   return new Date();
 }
 
-// ================= FIREBASE CONFIGURATION & FIRESTORE MANAGER =================
-const firebaseConfig = {
-  apiKey: "AIzaSyAEROCv8lYbMaxDVhg4u4kcfjGPO2UZL2M",
-  authDomain: "app-create-con-ai.firebaseapp.com",
-  projectId: "app-create-con-ai",
-  storageBucket: "app-create-con-ai.firebasestorage.app",
-  messagingSenderId: "492848248969",
-  appId: "1:492848248969:web:d2e259d742d46614b66e58",
-  measurementId: "G-LXBDP5Q92P"
-};
-
+// ================= FIRESTORE CLOUD STORAGE MANAGER =================
 class FirebaseStorageManager {
   constructor() {
     this.app = null;
@@ -202,8 +243,9 @@ class FirebaseStorageManager {
     }
 
     try {
+      const fbConfig = getDecryptedFirebaseConfig();
       if (!firebase.apps.length) {
-        this.app = firebase.initializeApp(firebaseConfig);
+        this.app = firebase.initializeApp(fbConfig);
       } else {
         this.app = firebase.app();
       }
@@ -1261,7 +1303,7 @@ class AppController {
       // Aggiorna istruzione banner a seconda della modalità
       const instEl = document.getElementById('voice-recording-instruction');
       if (instEl) {
-        instEl.textContent = isResuming ? 'Tocca STOP per terminare' : 'Tocca STOP o rilascia per terminare';
+        instEl.textContent = isResuming ? 'Tocca per terminare' : 'Tocca o rilascia per terminare';
       }
 
       // Timer conteggio registrazione live (continua dalla durata precedentemente accumulata)
@@ -1429,6 +1471,11 @@ Devi generare:
 1) "title": un titolo conciso, chiaro ed espressivo per la nota (massimo 7-8 parole).
 2) "summary": un testo ordinato, completo e ben strutturato che riassume ed espone chiaramente quanto detto nel file audio, formulato in lingua italiana e scritto come se fosse una nota redatta a mano. Se opportuno usa paragrafi o elenchi puntati.
 
+REGOLE DI FORMATTAZIONE OBBLIGATORIE:
+- NON usare MAI caratteri di formattazione markdown come asterischi ("*", "**", "***") né cancelletti ("#", "##", "###") né trattini bassi ("_").
+- Per gli elenchi puntati usa ESCLUSIVAMENTE il simbolo pallino "• " oppure numeri "1.", "2.".
+- Per evidenziare concetti o titoli di sezione usa parole in MAIUSCOLO oppure vai a capo con una riga vuota, SENZA mai usare asterischi o cancelletti.
+
 Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
 {
   "title": "Titolo della nota",
@@ -1527,8 +1574,9 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         console.error('Errore chiamata Gemini API:', geminiErr);
       }
 
-      aiTitle = String(aiTitle || 'Nota Vocale').trim();
-      aiSummary = String(aiSummary || 'Registrazione vocale allegata alla nota.').trim();
+      // Pulisce rigorosamente il testo da qualsiasi asterisco o cancelletto
+      aiTitle = cleanAiFormatting(aiTitle || 'Nota Vocale');
+      aiSummary = cleanAiFormatting(aiSummary || 'Registrazione vocale allegata alla nota.');
 
       // 3. Rilevamento automatico Posizione GPS e Meteo
       let autoLocation = '';
@@ -1806,7 +1854,8 @@ ISTRUZIONI PER LA RISPOSTA:
 1. Rispondi sempre in lingua italiana in modo chiaro, ordinato, completo e cordiale.
 2. Basa la tua risposta ESCLUSIVAMENTE sui contenuti, date, luoghi e informazioni presenti nelle note dell'utente fornite sopra.
 3. Se pertinente, cita date, nomi, luoghi o dettagli esatti citati nelle note.
-4. Se nelle note non c'è alcuna informazione pertinente per rispondere alla domanda, dillo con gentilezza e chiarezza spiegando che non sono state trovate note relative.`;
+4. Se nelle note non c'è alcuna informazione pertinente per rispondere alla domanda, dillo con gentilezza e chiarezza spiegando che non sono state trovate note relative.
+5. REGOLE DI FORMATTAZIONE OBBLIGATORIE: NON usare MAI caratteri di sintassi markdown come asterischi ("*", "**", "***") né cancelletti ("#", "##", "###"). Usa elenchi puntati con "• " o numeri, e maiuscole per i titoli di sezione.`;
 
       const apiKey = getDecryptedGeminiKey();
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
@@ -1853,6 +1902,8 @@ ISTRUZIONI PER LA RISPOSTA:
 
       if (!aiResponseText) {
         aiResponseText = "Non è stato possibile ottenere una risposta dall'AI. Verifica la connessione e riprova.";
+      } else {
+        aiResponseText = cleanAiFormatting(aiResponseText);
       }
 
       if (resultTextEl) resultTextEl.textContent = aiResponseText;

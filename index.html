@@ -521,7 +521,7 @@
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.13</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.16</span>
         </p>
       </div>
 
@@ -799,9 +799,9 @@
     </div>
   </nav>
 
-  <!-- ================= RIQUADRO CENTRALE REGISTRAZIONE VOCALE (REG + CONTATORE + TASTO STOP) ================= -->
+  <!-- ================= RIQUADRO CENTRALE REGISTRAZIONE VOCALE (REG + CONTATORE - TOCCA PER STOP) ================= -->
   <div id="voice-recording-banner" class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4 hidden">
-    <div class="bg-black/95 border-2 border-red-600 shadow-[0_0_35px_rgba(220,38,38,0.55)] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center gap-3 min-w-[230px] sm:min-w-[270px] text-center scale-in pointer-events-auto">
+    <div onclick="app.stopVoiceRecording()" class="bg-black/95 border-2 border-red-600 shadow-[0_0_35px_rgba(220,38,38,0.55)] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center gap-2 min-w-[210px] sm:min-w-[250px] text-center scale-in pointer-events-auto cursor-pointer select-none active:scale-95 transition-transform" title="Tocca il riquadro per interrompere la registrazione">
       
       <!-- Scritta REG in Rosso Centrata -->
       <div class="flex items-center justify-center gap-2.5">
@@ -817,20 +817,8 @@
         00:00
       </div>
 
-      <!-- Pulsante STOP per interrompere/mettere in pausa la registrazione -->
-      <button 
-        type="button" 
-        onclick="app.stopVoiceRecording()" 
-        id="voice-recording-stop-btn"
-        class="mt-1 w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/40 transition-all cursor-pointer select-none"
-        title="Tocca per interrompere la registrazione e vedere le opzioni"
-      >
-        <span class="w-3 h-3 bg-white rounded-sm"></span>
-        <span>STOP (Interrompi)</span>
-      </button>
-
-      <p id="voice-recording-instruction" class="text-[11px] text-slate-300 font-medium tracking-wide select-none">
-        Tocca STOP o rilascia per terminare
+      <p id="voice-recording-instruction" class="text-[11px] text-slate-300 font-medium tracking-wide mt-1 select-none">
+        Tocca per terminare
       </p>
     </div>
   </div>
