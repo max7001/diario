@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.11';
+const APP_VERSION = '2.12';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -670,8 +670,9 @@ class AppController {
     this.firebase = new FirebaseStorageManager();
     this.notes = [];
     this.currentView = 'notes'; // 'notes', 'calendar', 'stats', 'settings'
-    this.currentFilter = 'all'; // 'all', 'photos', 'recent', 'folder:XYZ', 'day:YYYY-MM-DD'
+    this.currentFilter = 'all'; // 'all', 'photos', 'folder:XYZ', 'day:YYYY-MM-DD'
     this.searchQuery = '';
+    this.isAiSearchActive = false;
     this.currentSort = 'date-desc';
     this.notesLimit = 30;
     this._lockListenerAttached = false;
@@ -681,7 +682,7 @@ class AppController {
     this.editorPhotos = []; // array of base64 strings
     this.editorAudio = null; // base64 audio string
 
-    // Voice Recording & Long Press State (3 Secondi)
+    // Voice Recording & Long Press State (~2 Secondi)
     this.longPressTimer = null;
     this.longPressInterval = null;
     this.longPressElapsed = 0;
@@ -689,6 +690,8 @@ class AppController {
     this.isRecording = false;
     this.mediaRecorder = null;
     this.audioChunks = [];
+    this.recordedAudioBlobs = []; // Array per concatenazione registrazioni multiple
+    this.accumulatedDurationSec = 0;
     this.recordedAudioBlob = null;
     this.recordedAudioBase64 = null;
     this.recordingStartTime = null;
@@ -1179,7 +1182,8 @@ class AppController {
   }
 
   // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
-  async startVoiceRecording() {
+  // --- REGISTRAZIONE VOCALE (MEDIA RECORDER API) ---
+  async startVoiceRecording(isResuming = false) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -1197,6 +1201,13 @@ class AppController {
       this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       this.audioChunks = [];
 
+      if (!isResuming) {
+        this.recordedAudioBlobs = [];
+        this.accumulatedDurationSec = 0;
+      }
+
+      this.closeVoiceReviewModal();
+
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           this.audioChunks.push(e.data);
@@ -1204,8 +1215,15 @@ class AppController {
       };
 
       this.mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
-        this.recordedAudioBlob = audioBlob;
+        const currentSegmentBlob = new Blob(this.audioChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+        this.recordedAudioBlobs.push(currentSegmentBlob);
+
+        const currentSegmentSec = Math.round((Date.now() - this.recordingStartTime) / 1000);
+        this.accumulatedDurationSec += currentSegmentSec;
+
+        // Combina tutti i segmenti audio registrati in un unico Blob
+        const mergedBlob = new Blob(this.recordedAudioBlobs, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+        this.recordedAudioBlob = mergedBlob;
         
         // Ferma le tracce audio del microfono
         stream.getTracks().forEach(track => track.stop());
@@ -1214,9 +1232,9 @@ class AppController {
         const reader = new FileReader();
         reader.onloadend = () => {
           this.recordedAudioBase64 = reader.result;
-          this.openVoiceReviewModal(audioBlob);
+          this.openVoiceReviewModal(mergedBlob);
         };
-        reader.readAsDataURL(audioBlob);
+        reader.readAsDataURL(mergedBlob);
       };
 
       this.mediaRecorder.start(250);
@@ -1229,23 +1247,32 @@ class AppController {
       // UI: trasforma il pulsante in STOP rosso e mostra il banner
       this.updateRecordingUI(true);
 
-      // Timer conteggio registrazione live
+      // Timer conteggio registrazione live (continua dalla durata precedentemente accumulata)
       const timerEl = document.getElementById('voice-recording-timer');
-      if (timerEl) timerEl.textContent = '00:00';
+      const startOffset = this.accumulatedDurationSec;
+      const initialMins = String(Math.floor(startOffset / 60)).padStart(2, '0');
+      const initialSecs = String(startOffset % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${initialMins}:${initialSecs}`;
+
       this.recordingTimerInterval = setInterval(() => {
-        const elapsedSec = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+        const elapsedSec = startOffset + Math.floor((Date.now() - this.recordingStartTime) / 1000);
         const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
         const secs = String(elapsedSec % 60).padStart(2, '0');
         if (timerEl) timerEl.textContent = `${mins}:${secs}`;
       }, 250);
 
-      this.showToast('Registrazione vocale avviata...', 'info');
+      this.showToast(isResuming ? 'Registrazione vocale ripresa...' : 'Registrazione vocale avviata...', 'info');
     } catch (err) {
       console.error('Errore accesso al microfono:', err);
       this.showToast('Permesso microfono non concesso o non disponibile.', 'error');
       this.updateRecordingUI(false);
       this.isRecording = false;
     }
+  }
+
+  resumeVoiceRecording() {
+    this.closeVoiceReviewModal();
+    this.startVoiceRecording(true);
   }
 
   stopVoiceRecording() {
@@ -1299,30 +1326,32 @@ class AppController {
     if (window.lucide) lucide.createIcons();
   }
 
-  // --- MODALE REVISIONE VOCALE (CESTINO, PLAY, SALVA CON IA) ---
+  // --- MODALE REVISIONE VOCALE (CESTINO, REC PER CONTINUARE, SALVA CON IA) ---
+  closeVoiceReviewModal() {
+    const modal = document.getElementById('voice-review-modal');
+    const audioEl = document.getElementById('voice-review-audio');
+    if (audioEl) {
+      audioEl.pause();
+    }
+    modal?.classList.add('hidden');
+  }
+
   openVoiceReviewModal(audioBlob) {
     const modal = document.getElementById('voice-review-modal');
     const audioEl = document.getElementById('voice-review-audio');
     const durationEl = document.getElementById('voice-review-duration');
     const loadingEl = document.getElementById('voice-ai-loading');
-    const playText = document.getElementById('voice-review-play-text');
-    const playIcon = document.getElementById('voice-review-play-icon');
+    const saveBtn = document.getElementById('voice-review-save-btn');
 
     if (loadingEl) loadingEl.classList.add('hidden');
-    if (playText) playText.textContent = 'PLAY';
-    if (playIcon) playIcon.setAttribute('data-lucide', 'play');
+    if (saveBtn) saveBtn.disabled = false;
 
     if (audioEl) {
       audioEl.src = URL.createObjectURL(audioBlob);
-      audioEl.onended = () => {
-        if (playText) playText.textContent = 'PLAY';
-        if (playIcon) playIcon.setAttribute('data-lucide', 'play');
-        if (window.lucide) lucide.createIcons();
-      };
     }
 
-    if (durationEl && this.recordingStartTime) {
-      const sec = Math.max(1, Math.round((Date.now() - this.recordingStartTime) / 1000));
+    if (durationEl) {
+      const sec = Math.max(1, this.accumulatedDurationSec || 1);
       const mins = String(Math.floor(sec / 60)).padStart(2, '0');
       const secs = String(sec % 60).padStart(2, '0');
       durationEl.textContent = `Durata: ${mins}:${secs}`;
@@ -1332,34 +1361,17 @@ class AppController {
     if (window.lucide) lucide.createIcons();
   }
 
-  toggleReviewAudioPlay() {
-    const audioEl = document.getElementById('voice-review-audio');
-    const playText = document.getElementById('voice-review-play-text');
-    const playIcon = document.getElementById('voice-review-play-icon');
-    if (!audioEl) return;
-
-    if (audioEl.paused) {
-      audioEl.play();
-      if (playText) playText.textContent = 'PAUSA';
-      if (playIcon) playIcon.setAttribute('data-lucide', 'pause');
-    } else {
-      audioEl.pause();
-      if (playText) playText.textContent = 'PLAY';
-      if (playIcon) playIcon.setAttribute('data-lucide', 'play');
-    }
-    if (window.lucide) lucide.createIcons();
-  }
-
   cancelVoiceRecording() {
-    const modal = document.getElementById('voice-review-modal');
+    this.closeVoiceReviewModal();
     const audioEl = document.getElementById('voice-review-audio');
     if (audioEl) {
       audioEl.pause();
       audioEl.src = '';
     }
+    this.recordedAudioBlobs = [];
+    this.accumulatedDurationSec = 0;
     this.recordedAudioBlob = null;
     this.recordedAudioBase64 = null;
-    modal?.classList.add('hidden');
     this.showToast('Registrazione vocale annullata', 'info');
   }
 
@@ -1683,6 +1695,164 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
   }
 
   // --- FILTRI & RICERCA NOTE ---
+  // --- FILTRI & RICERCA NOTE ---
+  toggleAiSearchMode() {
+    this.isAiSearchActive = !this.isAiSearchActive;
+    const aiBtn = document.getElementById('chip-filter-ai');
+    const searchInput = document.getElementById('search-input');
+
+    if (this.isAiSearchActive) {
+      if (aiBtn) {
+        aiBtn.className = 'chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/30 border border-transparent flex items-center gap-1.5 active:scale-95';
+      }
+      if (searchInput) {
+        searchInput.placeholder = 'Fai una domanda all\'AI sulle tue note e premi Invio...';
+        searchInput.focus();
+        if (searchInput.value.trim().length > 0) {
+          this.performAiSearch(searchInput.value.trim());
+        }
+      }
+    } else {
+      if (aiBtn) {
+        aiBtn.className = 'chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 flex items-center gap-1.5 shadow-sm';
+      }
+      if (searchInput) {
+        searchInput.placeholder = 'Cerca per titolo, testo, luogo, meteo...';
+      }
+      this.renderNotesList();
+    }
+  }
+
+  async performAiSearch(query = null) {
+    const searchInput = document.getElementById('search-input');
+    const q = (query || searchInput?.value || '').trim();
+
+    if (!q) {
+      this.showToast('Digita una domanda o ricerca per l\'AI...', 'info');
+      searchInput?.focus();
+      return;
+    }
+
+    const modal = document.getElementById('ai-search-modal');
+    const queryEl = document.getElementById('ai-search-modal-query');
+    const loadingEl = document.getElementById('ai-search-loading');
+    const resultContainer = document.getElementById('ai-search-result-container');
+    const resultTextEl = document.getElementById('ai-search-result-text');
+    const notesCountEl = document.getElementById('ai-search-notes-count');
+
+    if (queryEl) queryEl.textContent = `Domanda: "${q}"`;
+    if (notesCountEl) notesCountEl.textContent = this.notes.length;
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (resultContainer) resultContainer.classList.add('hidden');
+    if (resultTextEl) resultTextEl.textContent = '';
+
+    modal?.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+
+    try {
+      // 1. Prepara il contesto sintetico di tutte le note dell'utente
+      const notesContext = this.notes.map((n, i) => {
+        const titleStr = n.title ? `Titolo: ${n.title}` : 'Senza Titolo';
+        const dateStr = n.date ? `Data: ${n.date}` : '';
+        const locStr = n.location ? `Luogo: ${n.location}` : '';
+        const weatherStr = n.weather ? `Meteo: ${n.weather}` : '';
+        const folderStr = n.folder ? `Cartella: ${n.folder}` : '';
+        const meta = [titleStr, dateStr, locStr, weatherStr, folderStr].filter(Boolean).join(' | ');
+        return `[Nota #${i + 1}] ${meta}\nTesto:\n${n.content || '(nessun testo)'}`;
+      }).join('\n\n---\n\n');
+
+      // 2. Prompt per Gemini AI
+      const promptText = `Sei l'assistente AI personale intelligente integrato nell'app di note MassiNote.
+L'utente ti sta ponendo una domanda o una richiesta di ricerca sul suo archivio note personale.
+
+DOMANDA DELL'UTENTE:
+"${q}"
+
+ARCHIVIO COMPLETO DELLE NOTE DELL'UTENTE (${this.notes.length} note totali):
+${notesContext}
+
+ISTRUZIONI PER LA RISPOSTA:
+1. Rispondi sempre in lingua italiana in modo chiaro, ordinato, completo e cordiale.
+2. Basa la tua risposta ESCLUSIVAMENTE sui contenuti, date, luoghi e informazioni presenti nelle note dell'utente fornite sopra.
+3. Se pertinente, cita date, nomi, luoghi o dettagli esatti citati nelle note.
+4. Se nelle note non c'è alcuna informazione pertinente per rispondere alla domanda, dillo con gentilezza e chiarezza spiegando che non sono state trovate note relative.`;
+
+      const apiKey = getDecryptedGeminiKey();
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [{ text: promptText }]
+          }
+        ]
+      };
+
+      let aiResponseText = '';
+      let tokensUsed = 0;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        aiResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        tokensUsed = result.usageMetadata?.totalTokenCount || ((result.usageMetadata?.promptTokenCount || 0) + (result.usageMetadata?.candidatesTokenCount || 0)) || Math.round(promptText.length / 4);
+      } else {
+        console.warn('Fallback a gemini-3.5-flash per ricerca AI:', response.status);
+        const fbEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+        const fbRes = await fetch(fbEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        if (fbRes.ok) {
+          const fbResult = await fbRes.json();
+          aiResponseText = fbResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          tokensUsed = fbResult.usageMetadata?.totalTokenCount || ((fbResult.usageMetadata?.promptTokenCount || 0) + (fbResult.usageMetadata?.candidatesTokenCount || 0)) || Math.round(promptText.length / 4);
+        }
+      }
+
+      if (tokensUsed > 0) {
+        this.addAiTokenUsage(tokensUsed);
+      }
+
+      if (!aiResponseText) {
+        aiResponseText = "Non è stato possibile ottenere una risposta dall'AI. Verifica la connessione e riprova.";
+      }
+
+      if (resultTextEl) resultTextEl.textContent = aiResponseText;
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (resultContainer) resultContainer.classList.remove('hidden');
+
+    } catch (err) {
+      console.error('Errore ricerca AI:', err);
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (resultContainer) resultContainer.classList.remove('hidden');
+      if (resultTextEl) resultTextEl.textContent = `Si è verificato un errore durante la ricerca AI: ${err.message || err}`;
+    }
+  }
+
+  closeAiSearchModal() {
+    const modal = document.getElementById('ai-search-modal');
+    modal?.classList.add('hidden');
+
+    // Quando il popup viene chiuso, il tasto AI torna come di default disattivato
+    this.isAiSearchActive = false;
+    const aiBtn = document.getElementById('chip-filter-ai');
+    if (aiBtn) {
+      aiBtn.className = 'chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 flex items-center gap-1.5 shadow-sm';
+    }
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+      searchInput.placeholder = 'Cerca per titolo, testo, luogo, meteo...';
+    }
+    this.renderNotesList();
+  }
+
   onSearchInput(val) {
     this.notesLimit = 30;
     this.searchQuery = val.trim().toLowerCase();
@@ -1708,7 +1878,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
     this.currentFilter = filterType;
     
     // Aggiorna stile chips
-    ['chip-filter-all', 'chip-filter-photos', 'chip-filter-recent'].forEach(id => {
+    ['chip-filter-all', 'chip-filter-photos'].forEach(id => {
       const btn = document.getElementById(id);
       if (btn) {
         btn.className = 'chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1';
@@ -3350,6 +3520,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         this.closeImageViewer();
         this.closeConfirmModal();
         this.cancelVoiceRecording();
+        this.closeAiSearchModal();
       }
       // Ctrl+S o Cmd+S salva la nota se l'editor è aperto
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -3361,7 +3532,20 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
       }
     });
 
-    // 3. Drag and Drop globale di file JSON
+    // 3. Listener Invio su barra di ricerca
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (this.isAiSearchActive) {
+            e.preventDefault();
+            this.performAiSearch(searchInput.value);
+          }
+        }
+      });
+    }
+
+    // 4. Drag and Drop globale di file JSON
     window.addEventListener('dragover', (e) => {
       e.preventDefault();
       e.stopPropagation();
