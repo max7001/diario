@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.20)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.21)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.20), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.21), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -36,13 +36,14 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - L'apertura della nota o l'esportazione richiede il PIN di sicurezza `1804` (verificato tramite hash crittografico SHA-256 nella modale `#note-pin-modal`).
 
 ======================================================================
-3. MOTORE DI PERSISTENZA IBRIDO & RESILIENTE (NOTE DATABASE)
+3. MOTORE DI PERSISTENZA IBRIDO & RENDERING REATTIVO
 ======================================================================
 - Architettura a Doppio Livello:
   - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`).
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
-  - Se IndexedDB è bloccato, in modalità privata, o non supportato dal browser, l'app passa all'istante al fallback locale senza generare errori all'avvio.
   - Tutte le operazioni (`getAll`, `get`, `put`, `putBatch`, `delete`, `clear`) sono protette da try/catch e mantengono una copia shadow sincronizzata.
+- Rendering Non-Bloccante da Cloud Sync (`mergeCloudNotes`):
+  - All'arrivo dello snapshot da Firestore (anche con centinaia di note), l'unione e il rendering visivo a schermo (`render()`) avvengono istantaneamente in RAM prima della scrittura su disco, evitando qualsiasi blocco dell'interfaccia.
 
 ======================================================================
 4. INTEGRAZIONE INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.6 FLASH)
@@ -100,6 +101,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 1. **VISTA NOTE (`#view-notes`)**:
    - Barra di ricerca con tasti filtro: "Tutte", "Con Foto", e tasto "AI" per ricerca generativa.
    - Card note con data italiana, badge foto/audio/meteo/luogo/cartella/lucchetto, tasti Condividi, PDF, Chiave e Cestino.
+   - Paginazione intelligente con caricamento a scaglioni di 30 note.
    - Su schermi grandi, il tasto "+ Nuova Nota" è posizionato al centro della barra superiore.
 2. **VISTA CALENDARIO (`#view-calendar`)**:
    - Griglia mensile completa, navigazione mese/anno, indicatore note per giorno e visualizzatore note del giorno.
@@ -111,7 +113,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.20".
+   - Footer finale: "MassiNote WebApp • Versione 2.21".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
@@ -120,7 +122,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 ======================================================================
 8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.20`.
+- Versione attuale: `2.21`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```

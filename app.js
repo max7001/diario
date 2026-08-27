@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.20';
+const APP_VERSION = '2.21';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -1142,6 +1142,7 @@ class AppController {
       tags: Array.isArray(n.tags) ? n.tags.map(String) : [],
       photos: Array.isArray(n.photos) ? n.photos : [],
       audio: typeof n.audio === 'string' ? n.audio : null,
+      locked: Boolean(n.locked),
       pinned: Boolean(n.pinned),
       createdAt: n.createdAt ? String(n.createdAt) : new Date().toISOString(),
       updatedAt: n.updatedAt ? String(n.updatedAt) : new Date().toISOString()
@@ -1152,38 +1153,46 @@ class AppController {
     if (!Array.isArray(cloudNotes) || cloudNotes.length === 0) return;
     
     // Costruisci mappa delle note locali
-    const localMap = new Map(this.notes.map(n => [n.id, n]));
+    const localMap = new Map(this.notes.map(n => [String(n.id), n]));
     let hasChanges = false;
 
-    for (const cn of cloudNotes) {
-      if (!cn || !cn.id) continue;
-      const local = localMap.get(cn.id);
+    for (const rawCn of cloudNotes) {
+      if (!rawCn || !rawCn.id) continue;
+      const cn = this.sanitizeNote(rawCn);
+      if (!cn) continue;
+
+      const noteId = String(cn.id);
+      const local = localMap.get(noteId);
+
       if (!local) {
         // Nuova nota proveniente dal cloud
-        localMap.set(cn.id, cn);
+        localMap.set(noteId, cn);
         hasChanges = true;
       } else {
         // Nota esistente: preserva foto e audio locali se il cloud non li contiene per limiti payload
         const localUpdated = new Date(local.updatedAt || local.date || 0).getTime();
         const cloudUpdated = new Date(cn.updatedAt || cn.date || 0).getTime();
-        if (cloudUpdated > localUpdated) {
+        if (cloudUpdated >= localUpdated) {
           const merged = {
             ...cn,
             photos: (cn.photos && cn.photos.length > 0) ? cn.photos : (local.photos || []),
-            audio: cn.audio || local.audio || null
+            audio: cn.audio || local.audio || null,
+            locked: (cn.locked !== undefined) ? cn.locked : (local.locked || false)
           };
-          localMap.set(cn.id, merged);
+          localMap.set(noteId, this.sanitizeNote(merged));
           hasChanges = true;
         }
       }
     }
 
-    if (hasChanges) {
-      this.notes = Array.from(localMap.values());
+    if (hasChanges || this.notes.length !== localMap.size) {
+      this.notes = Array.from(localMap.values()).map(n => this.sanitizeNote(n)).filter(Boolean);
       this.sortNotes();
-      await this.db.putBatch(this.notes).catch(e => console.warn('DB merge error:', e));
+      // Renderizza immediatamente a schermo per la massima reattività
       this.render();
       this.updateStorageStats();
+      // Persisti in IndexedDB in background
+      this.db.putBatch(this.notes).catch(e => console.warn('DB merge batch warning:', e));
     }
   }
 
