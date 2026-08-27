@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.26';
+const APP_VERSION = '2.27';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -946,6 +946,7 @@ class AppController {
     this.longPressElapsed = 0;
     this.isLongPressTriggered = false;
     this.isRecording = false;
+    this.isEditorVoiceRecording = false;
     this.mediaRecorder = null;
     this.audioChunks = [];
     this.recordedAudioBlobs = []; // Array per concatenazione registrazioni multiple
@@ -1490,8 +1491,10 @@ class AppController {
       try { document.activeElement.blur(); } catch (e) {}
     }
 
-    if (this.currentView === 'editor') {
-      this.closeEditor();
+    if (!isResuming && !this.isEditorVoiceRecording) {
+      if (this.currentView === 'editor') {
+        this.closeEditor();
+      }
     }
 
     try {
@@ -1679,7 +1682,25 @@ class AppController {
     const saveBtn = document.getElementById('voice-review-save-btn');
 
     if (loadingEl) loadingEl.classList.add('hidden');
-    if (saveBtn) saveBtn.disabled = false;
+    
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      if (this.isEditorVoiceRecording) {
+        saveBtn.setAttribute('onclick', 'app.saveVoiceRecordingToEditor()');
+        saveBtn.setAttribute('title', 'Salva la registrazione vocale all\'interno di questa nota');
+        saveBtn.innerHTML = `
+          <i data-lucide="save" class="w-5 h-5"></i>
+          <span>Salva</span>
+        `;
+      } else {
+        saveBtn.setAttribute('onclick', 'app.processVoiceRecordingWithAI()');
+        saveBtn.setAttribute('title', 'Elabora trascrizione e riassunto con Gemini AI');
+        saveBtn.innerHTML = `
+          <i data-lucide="sparkles" class="w-5 h-5 text-amber-300"></i>
+          <span>Salva (IA)</span>
+        `;
+      }
+    }
 
     if (audioEl) {
       audioEl.src = URL.createObjectURL(audioBlob);
@@ -1696,6 +1717,25 @@ class AppController {
     if (window.lucide) lucide.createIcons();
   }
 
+  saveVoiceRecordingToEditor() {
+    if (!this.recordedAudioBase64) {
+      this.showToast('Nessun file audio registrato', 'error');
+      return;
+    }
+
+    this.editorAudio = this.recordedAudioBase64;
+    this.renderEditorAudio();
+    this.closeVoiceReviewModal();
+
+    this.recordedAudioBlobs = [];
+    this.accumulatedDurationSec = 0;
+    this.recordedAudioBlob = null;
+    this.recordedAudioBase64 = null;
+    this.isEditorVoiceRecording = false;
+
+    this.showToast('Registrazione vocale allegata alla nota!', 'success');
+  }
+
   cancelVoiceRecording() {
     this.closeVoiceReviewModal();
     const audioEl = document.getElementById('voice-review-audio');
@@ -1707,11 +1747,13 @@ class AppController {
     this.accumulatedDurationSec = 0;
     this.recordedAudioBlob = null;
     this.recordedAudioBase64 = null;
+    this.isEditorVoiceRecording = false;
     this.showToast('Registrazione vocale annullata', 'info');
   }
 
   // --- ANALISI AUDIO CON GEMINI AI & CREAZIONE NOTA ---
   async processVoiceRecordingWithAI() {
+    this.isEditorVoiceRecording = false;
     if (!this.recordedAudioBase64) {
       this.showToast('Nessun file audio da analizzare', 'error');
       return;

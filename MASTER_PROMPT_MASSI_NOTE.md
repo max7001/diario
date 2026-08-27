@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.26)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.27)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.26), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.27), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -53,7 +53,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - Fallback Automatico: `gemini-3.5-flash` in caso di errore sulla versione 3.6.
 - Chiave API Protetta: Decifrata dinamicamente solo in memoria da `getDecryptedGeminiKey()`.
 - Input Audio Multimodale: I dati audio sono inviati come `inline_data: { mime_type, data: base64Data }`.
-- Prompt di Sistema AI (Note Vocali):
+- Prompt di Sistema AI (Note Vocali da Home):
   "Sei un assistente personale intelligente per la gestione degli appunti in italiano. Ascolta attentamente questo file audio registrato dall'utente. Devi generare un JSON valido con: 'title' (titolo conciso max 7-8 parole) e 'summary' (riassunto ordinato e completo scritto come se fosse una nota redatta a mano in italiano)."
 - Divieto Sintassi Markdown & Sanitizzazione Automatica:
   - Nei prompt per Gemini è fatto esplicito divieto di usare caratteri Markdown come asterischi `*`, `**`, cancelletti `#`, `##` o trattini bassi `_`.
@@ -68,16 +68,16 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Visualizzazione del contatore token cumulativo e delle note vocali analizzate nella schermata Statistiche.
 
 ======================================================================
-5. REGISTRAZIONE VOCALE, PDF, COMPRESSIONE FOTO & GALLERIA A CAROSELLO
+5. REGISTRAZIONE VOCALE DIFFERENZIATA, PDF, FOTO & CAROSELLO
 ======================================================================
+- Registrazione Vocale con Modalità Differenziata:
+  - **Dall'Editor (Tasto Microfono)**: Avvia la registrazione da zero. Allo stop, la modale mostra il tasto **"Salva"** (con icona disco) per allegare direttamente la traccia audio all'interno della nota corrente senza effettuare il riassunto AI (`saveVoiceRecordingToEditor`).
+  - **Dalla Home (Hold-to-Record "+")**: Pressione continuata di 1,5 secondi. Allo stop, la modale mostra il tasto **"Salva (IA)"** per trascrivere e creare una nuova nota compilata da Gemini AI.
+  - Tolleranza movimento (60px) e cattura tocco (`setPointerCapture`).
+  - Tasto REC intermedio per riprendere e concatenare registrazioni audio in un unico file Blob.
 - Compressione e Ridimensionamento Intelligente delle Fotografie:
   - Caricamento da galleria/fotocamera (`resizeAndEncodeImage`): ridimensionamento automatico a max 1080px e compressione JPEG 0.72 (~60-100 KB per foto).
-  - Pre-sincronizzazione Cloud (`prepareNoteForCloud` & `compressBase64Image`): compressione al volo per garantire che ogni nota con foto rientri sempre nel limite di 1 MB di Firestore e venga sincronizzata regolarmente.
-- Registrazione Vocale Integrata:
-  - Tasto Microfono nell'header dell'editor (prima del tasto Foto): avvia direttamente la registrazione vocale da zero con il riquadro centrale a schermo.
-  - Hold-to-Record da tasto "+" centrale (1,5 secondi di pressione continuata).
-  - Tolleranza al movimento (60px) e cattura tocco (`setPointerCapture`).
-  - Durante la registrazione e la continuazione con il tasto REC, il tasto in basso scompare completamente lasciando solo il riquadro con il contatore.
+  - Pre-sincronizzazione Cloud (`prepareNoteForCloud` & `compressBase64Image`): compressione al volo per garantire che ogni nota con foto rientri sempre nel limite di 1 MB di Firestore.
 - Esportazione PDF per Singola Nota:
   - Icona PDF rossa su ogni card nota per stampare / scaricare la scheda completa in formato A4 con metadati e immagini.
 - Visualizzatore Foto a Carosello & Smart Auto-Rotation:
@@ -102,11 +102,10 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 ======================================================================
 L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 1. **VISTA NOTE (`#view-notes`)**:
-   - Layout allargato a `max-w-6xl` con padding coordinato `px-4 sm:px-6` perfettamente allineato ai margini esterni dell'header (dal logo di sinistra fino al blocco impostazioni di destra).
+   - Layout allargato a `max-w-6xl` con padding coordinato `px-4 sm:px-6` perfettamente allineato ai margini esterni dell'header.
    - Barra di ricerca con tasti filtro: "Tutte", "Con Foto", e tasto "AI" per ricerca generativa.
    - Card note con data italiana, badge foto/audio/meteo/luogo/cartella/lucchetto, tasti Condividi, PDF, Chiave e Cestino.
    - Paginazione intelligente con caricamento a scaglioni di 30 note.
-   - Su schermi grandi, il tasto "+ Nuova Nota" è posizionato al centro della barra superiore.
 2. **VISTA CALENDARIO (`#view-calendar`)**:
    - Griglia mensile completa, navigazione mese/anno, indicatore note per giorno e visualizzatore note del giorno.
 3. **VISTA STATISTICHE (`#view-stats`)**:
@@ -117,9 +116,9 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.26".
+   - Footer finale: "MassiNote WebApp • Versione 2.27".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
-   - Header fisso in cima con pulsanti Chiudi, Data/ora, Microfono (registra da zero), Foto, Salva (blu), Cestino (rosso).
+   - Header fisso in cima con pulsanti Chiudi, Data/ora, Microfono (registra e allega), Foto, Salva (blu), Cestino (rosso).
    - Barra di formattazione rapida essenziale sotto il titolo:
      - `B`: Grassetto su selezione testo.
      - `-`: Linea divisoria.
@@ -130,7 +129,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 ======================================================================
 8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.26`.
+- Versione attuale: `2.27`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```
