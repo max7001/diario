@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.24';
+const APP_VERSION = '2.26';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -3471,22 +3471,28 @@ ISTRUZIONI PER LA RISPOSTA:
     let replacement = '';
     if (type === 'bold') {
       replacement = `**${selected || 'testo'}**`;
-    } else if (type === 'italic') {
-      replacement = `*${selected || 'testo'}*`;
-    } else if (type === 'list') {
-      replacement = `\n- ${selected || 'elemento'}`;
-    } else if (type === 'check') {
-      replacement = `\n[ ] ${selected || 'attività'}`;
     } else if (type === 'divider') {
       replacement = `\n------------------------------------------------------------------------------------------------\n`;
-    } else if (type === 'time') {
+    } else if (type === 'date' || type === 'time') {
       const now = new Date();
-      replacement = ` [${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}] `;
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = String(now.getFullYear()).slice(-2);
+      replacement = `${day}/${month}/${year}`;
     }
 
     textarea.setRangeText(replacement, start, end, 'end');
     textarea.focus();
     this.onEditorContentChange();
+  }
+
+  // --- AVVIO REGISTRAZIONE VOCALE DALL'EDITOR (PARTE DA ZERO CON RIQUADRO CENTRALE) ---
+  startVoiceRecordingFromEditor() {
+    if (document.activeElement) {
+      try { document.activeElement.blur(); } catch (e) {}
+    }
+    this.isLongPressRecording = false; // Modalità tocco manuale
+    this.startVoiceRecording(false);
   }
 
   // --- GESTIONE FOTOGRAFIE NELL'EDITOR (FOTOCAMERA / GALLERIA) ---
