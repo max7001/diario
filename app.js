@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.22';
+const APP_VERSION = '2.23';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -2289,6 +2289,7 @@ ISTRUZIONI PER LA RISPOSTA:
 
     grid.innerHTML = toDisplay.map(note => {
       if (!note) return '';
+      const safeId = String(note.id || '').replace(/'/g, "\\'");
       let dateObj = parseDateSafe(note.date);
       const formattedDate = formatItalianDate(dateObj);
       const hasPhotos = Array.isArray(note.photos) && note.photos.length > 0;
@@ -2367,8 +2368,6 @@ ISTRUZIONI PER LA RISPOSTA:
                </div>`
           )
         : '';
-
-      const safeId = String(note.id || '').replace(/'/g, "\\'");
 
       return `
         <article 

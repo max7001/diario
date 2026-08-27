@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.22)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.23)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.22), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.23), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -43,7 +43,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`) se IndexedDB non è disponibile.
   - Tutte le operazioni (`getAll`, `get`, `put`, `putBatch`, `delete`, `clear`) sono protette da try/catch.
 - Rendering Non-Bloccante & Sincronizzazione Resiliente:
-  - Timeout di sicurezza di 3s sull'autenticazione Firebase per non bloccare mai l'avvio.
+  - Inizializzazione sicura di `safeId` e sanitizzazione di ogni campo.
   - All'arrivo dello snapshot da Firestore (anche con centinaia di note), l'unione e il rendering visivo a schermo (`render()`) avvengono istantaneamente in memoria, passando regolarmente allo stato "Sincronizzato".
 
 ======================================================================
@@ -114,7 +114,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.22".
+   - Footer finale: "MassiNote WebApp • Versione 2.23".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
@@ -123,7 +123,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 ======================================================================
 8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.22`.
+- Versione attuale: `2.23`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```
