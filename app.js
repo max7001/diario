@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.17';
+const APP_VERSION = '2.19';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -749,6 +749,16 @@ class AppController {
     // PIN Protection State per singole note
     this.pendingUnlockNoteId = null;
     this.pendingUnlockAction = null; // 'open_editor', 'toggle_lock', 'export_pdf'
+
+    // Image Viewer Carousel & Rotation State
+    this.viewerPhotos = [];
+    this.viewerCurrentIndex = 0;
+    this.viewerRotation = 0;
+    this.viewerTouchStartX = 0;
+    this.viewerTouchStartY = 0;
+
+    // Editor Photos Accordion State (> 4 foto)
+    this.editorPhotosExpanded = false;
   }
 
   async init() {
@@ -2193,7 +2203,7 @@ ISTRUZIONI PER LA RISPOSTA:
                  <i data-lucide="lock" class="w-5 h-5"></i>
                  <span class="text-[9px] font-bold mt-0.5">${photosCount} foto</span>
                </div>`
-            : `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-inner relative group" onclick="event.stopPropagation(); app.openImageViewer('${note.photos[0]}')">
+            : `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-inner relative group" onclick="event.stopPropagation(); app.openImageViewerForNote('${safeId}', 0)">
                  <img src="${note.photos[0]}" alt="Foto Nota" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
                  ${photosCount > 1 ? `<span class="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">+${photosCount - 1}</span>` : ''}
                </div>`
@@ -2975,6 +2985,7 @@ ISTRUZIONI PER LA RISPOSTA:
       this.detectCurrentLocationAndWeather();
     }
 
+    this.editorPhotosExpanded = false;
     this.renderEditorPhotos();
     this.renderEditorAudio();
     this.onEditorContentChange();
@@ -3314,10 +3325,17 @@ ISTRUZIONI PER LA RISPOSTA:
     });
   }
 
+  toggleEditorPhotosExpand() {
+    this.editorPhotosExpanded = !this.editorPhotosExpanded;
+    this.renderEditorPhotos();
+  }
+
   renderEditorPhotos() {
     const container = document.getElementById('editor-photos-container');
     const grid = document.getElementById('editor-photos-grid');
     const countEl = document.getElementById('editor-photos-count');
+    const expandIcon = document.getElementById('editor-photos-expand-icon');
+    const expandBadge = document.getElementById('editor-photos-expand-badge');
 
     if (this.editorPhotos.length === 0) {
       container?.classList.add('hidden');
@@ -3327,15 +3345,38 @@ ISTRUZIONI PER LA RISPOSTA:
     container?.classList.remove('hidden');
     if (countEl) countEl.textContent = this.editorPhotos.length;
 
+    const totalPhotos = this.editorPhotos.length;
+    const hasMoreThan4 = totalPhotos > 4;
+
+    if (hasMoreThan4) {
+      expandIcon?.classList.remove('hidden');
+      expandBadge?.classList.remove('hidden');
+
+      if (this.editorPhotosExpanded) {
+        if (expandIcon) expandIcon.style.transform = 'rotate(180deg)';
+        if (expandBadge) expandBadge.textContent = 'Comprimi';
+      } else {
+        if (expandIcon) expandIcon.style.transform = 'rotate(0deg)';
+        if (expandBadge) expandBadge.textContent = `+${totalPhotos - 4} altre (Mostra tutte)`;
+      }
+    } else {
+      expandIcon?.classList.add('hidden');
+      expandBadge?.classList.add('hidden');
+    }
+
     if (!grid) return;
 
-    grid.innerHTML = this.editorPhotos.map((photoBase64, idx) => `
-      <div class="relative group aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-        <img src="${photoBase64}" alt="Foto ${idx + 1}" class="w-full h-full object-cover cursor-pointer" onclick="app.openImageViewer('${photoBase64}')">
+    const photosToDisplay = (hasMoreThan4 && !this.editorPhotosExpanded)
+      ? this.editorPhotos.slice(0, 4)
+      : this.editorPhotos;
+
+    grid.innerHTML = photosToDisplay.map((photoBase64, idx) => `
+      <div class="relative group aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <img src="${photoBase64}" alt="Foto ${idx + 1}" class="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform" onclick="app.openImageViewerForEditor(${idx})">
         <button 
           type="button" 
           onclick="app.removeEditorPhoto(${idx})" 
-          class="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full shadow-md hover:bg-red-700 transition-colors"
+          class="absolute top-1.5 right-1.5 p-1 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-all active:scale-90 cursor-pointer"
           title="Rimuovi foto"
         >
           <i data-lucide="x" class="w-3.5 h-3.5"></i>
@@ -3511,19 +3552,185 @@ ISTRUZIONI PER LA RISPOSTA:
     }
   }
 
-  // --- ANTEPRIMA IMMAGINE FULLSCREEN ---
-  openImageViewer(src) {
-    const modal = document.getElementById('image-viewer-modal');
-    const img = document.getElementById('image-viewer-img');
-    if (modal && img) {
-      img.src = src;
-      modal.classList.remove('hidden');
+  // --- VISUALIZZATORE FOTO FULLSCREEN CON CAROSELLO & SMART ROTATION ---
+  openImageViewerForNote(noteId, startIndex = 0) {
+    const note = this.notes.find(n => n && String(n.id) === String(noteId));
+    if (!note || !Array.isArray(note.photos) || note.photos.length === 0) return;
+    
+    if (note.locked) {
+      this.pendingUnlockNoteId = noteId;
+      this.pendingUnlockAction = 'open_editor';
+      this.openNotePinModal();
+      return;
     }
+
+    this.openImageViewer(note.photos, startIndex);
+  }
+
+  openImageViewerForEditor(startIndex = 0) {
+    if (!Array.isArray(this.editorPhotos) || this.editorPhotos.length === 0) return;
+    this.openImageViewer(this.editorPhotos, startIndex);
+  }
+
+  openImageViewer(photos, startIndex = 0) {
+    const modal = document.getElementById('image-viewer-modal');
+    if (!modal) return;
+
+    if (Array.isArray(photos)) {
+      this.viewerPhotos = photos.filter(Boolean);
+    } else if (typeof photos === 'string') {
+      this.viewerPhotos = [photos];
+    } else {
+      this.viewerPhotos = [];
+    }
+
+    if (this.viewerPhotos.length === 0) return;
+
+    this.viewerCurrentIndex = Math.max(0, Math.min(startIndex, this.viewerPhotos.length - 1));
+    this.viewerRotation = 0;
+
+    modal.classList.remove('hidden');
+    this.loadCurrentViewerPhoto();
+    if (window.lucide) lucide.createIcons();
+  }
+
+  loadCurrentViewerPhoto() {
+    const img = document.getElementById('image-viewer-img');
+    const counterEl = document.getElementById('image-viewer-counter');
+    const prevBtn = document.getElementById('image-viewer-prev-btn');
+    const nextBtn = document.getElementById('image-viewer-next-btn');
+
+    if (counterEl) {
+      counterEl.textContent = `Foto ${this.viewerCurrentIndex + 1} di ${this.viewerPhotos.length}`;
+    }
+
+    if (prevBtn && nextBtn) {
+      if (this.viewerPhotos.length <= 1) {
+        prevBtn.classList.add('hidden');
+        nextBtn.classList.add('hidden');
+      } else {
+        prevBtn.classList.remove('hidden');
+        nextBtn.classList.remove('hidden');
+      }
+    }
+
+    this.renderViewerThumbnails();
+
+    if (img && this.viewerPhotos[this.viewerCurrentIndex]) {
+      img.onload = () => {
+        this.applySmartAutoRotation();
+      };
+      img.src = this.viewerPhotos[this.viewerCurrentIndex];
+    }
+  }
+
+  applySmartAutoRotation() {
+    const img = document.getElementById('image-viewer-img');
+    if (!img) return;
+
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+    const isScreenPortrait = screenH > screenW;
+
+    const imgW = img.naturalWidth || 1;
+    const imgH = img.naturalHeight || 1;
+    const isImageLandscape = imgW > imgH;
+
+    // Se lo schermo è verticale (smartphone) e la foto è orizzontale (landscape)
+    // ruota automaticamente di 90° per sfruttare l'altezza dello schermo a tutto schermo
+    if (isScreenPortrait && isImageLandscape) {
+      this.viewerRotation = 90;
+    } else {
+      this.viewerRotation = 0;
+    }
+
+    this.updateImageTransform();
+  }
+
+  updateImageTransform() {
+    const img = document.getElementById('image-viewer-img');
+    if (!img) return;
+
+    const rot = ((this.viewerRotation % 360) + 360) % 360;
+    const isRotated90or270 = (rot === 90 || rot === 270);
+
+    if (isRotated90or270) {
+      const availW = window.innerWidth - 32;
+      const availH = window.innerHeight - 130;
+
+      const imgW = img.naturalWidth || 1;
+      const imgH = img.naturalHeight || 1;
+
+      const scale = Math.min(availW / imgH, availH / imgW, 2.5);
+      img.style.transform = `rotate(${rot}deg) scale(${scale})`;
+      img.style.maxWidth = 'none';
+      img.style.maxHeight = 'none';
+    } else {
+      img.style.transform = `rotate(${rot}deg) scale(1)`;
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+    }
+  }
+
+  rotateImageViewer() {
+    this.viewerRotation = (this.viewerRotation + 90) % 360;
+    this.updateImageTransform();
+  }
+
+  resetImageViewerRotation() {
+    this.viewerRotation = 0;
+    this.updateImageTransform();
+  }
+
+  prevImageViewerPhoto() {
+    if (!this.viewerPhotos || this.viewerPhotos.length <= 1) return;
+    this.viewerCurrentIndex = (this.viewerCurrentIndex - 1 + this.viewerPhotos.length) % this.viewerPhotos.length;
+    this.loadCurrentViewerPhoto();
+  }
+
+  nextImageViewerPhoto() {
+    if (!this.viewerPhotos || this.viewerPhotos.length <= 1) return;
+    this.viewerCurrentIndex = (this.viewerCurrentIndex + 1) % this.viewerPhotos.length;
+    this.loadCurrentViewerPhoto();
+  }
+
+  goToViewerPhoto(idx) {
+    if (idx >= 0 && idx < this.viewerPhotos.length) {
+      this.viewerCurrentIndex = idx;
+      this.loadCurrentViewerPhoto();
+    }
+  }
+
+  renderViewerThumbnails() {
+    const thumbsBar = document.getElementById('image-viewer-thumbs-bar');
+    if (!thumbsBar) return;
+
+    if (!this.viewerPhotos || this.viewerPhotos.length <= 1) {
+      thumbsBar.innerHTML = '';
+      thumbsBar.classList.add('hidden');
+      return;
+    }
+
+    thumbsBar.classList.remove('hidden');
+    thumbsBar.innerHTML = this.viewerPhotos.map((src, idx) => {
+      const isCur = idx === this.viewerCurrentIndex;
+      return `
+        <div 
+          onclick="app.goToViewerPhoto(${idx})"
+          class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden border-2 cursor-pointer transition-all shrink-0 ${isCur ? 'border-blue-500 scale-110 shadow-lg ring-2 ring-blue-400/50' : 'border-white/30 opacity-60 hover:opacity-100'}"
+        >
+          <img src="${src}" class="w-full h-full object-cover" alt="Miniatura ${idx + 1}">
+        </div>
+      `;
+    }).join('');
   }
 
   closeImageViewer() {
     const modal = document.getElementById('image-viewer-modal');
     if (modal) modal.classList.add('hidden');
+    this.viewerPhotos = [];
+    this.viewerCurrentIndex = 0;
+    this.viewerRotation = 0;
   }
 
   // --- IMPORT / EXPORT FUNZIONI ---
@@ -3621,7 +3828,7 @@ ISTRUZIONI PER LA RISPOSTA:
     }
     const exportData = {
       app: 'MassiNote',
-      version: '2.0',
+      version: APP_VERSION,
       exportDate: new Date().toISOString(),
       totalNotes: this.notes.length,
       notes: this.notes
@@ -3637,7 +3844,7 @@ ISTRUZIONI PER LA RISPOSTA:
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    this.showToast('Backup JSON completo scaricato!', 'success');
+    this.showToast('Backup JSON completo (con tutte le foto) scaricato!', 'success');
   }
 
   handleJsonBackupImport(event) {
@@ -3656,7 +3863,7 @@ ISTRUZIONI PER LA RISPOSTA:
           return;
         }
 
-        // Normalizzazione profonda di tutte le proprietà per IndexedDB
+        // Normalizzazione profonda di tutte le proprietà (foto, audio, lucchetto, meteo, luogo, cartella) per IndexedDB
         const normalizedNotes = rawNotes.map((n, idx) => {
           let noteDate = new Date();
           if (n.date) {
@@ -3674,7 +3881,8 @@ ISTRUZIONI PER LA RISPOSTA:
             folder: String(n.folder || n.category || ''),
             tags: Array.isArray(n.tags) ? n.tags.map(String) : [],
             photos: Array.isArray(n.photos) ? n.photos : (Array.isArray(n.images) ? n.images : []),
-            audio: n.audio || null,
+            audio: typeof n.audio === 'string' ? n.audio : null,
+            locked: Boolean(n.locked),
             pinned: Boolean(n.pinned),
             createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : noteDate.toISOString(),
             updatedAt: n.updatedAt ? new Date(n.updatedAt).toISOString() : new Date().toISOString()
@@ -3868,6 +4076,9 @@ ISTRUZIONI PER LA RISPOSTA:
 
     // 2. Scorciatoie da tastiera
     window.addEventListener('keydown', (e) => {
+      const viewerModal = document.getElementById('image-viewer-modal');
+      const isViewerOpen = viewerModal && !viewerModal.classList.contains('hidden');
+
       // Escape chiude editor o modali
       if (e.key === 'Escape') {
         this.closeEditor();
@@ -3877,6 +4088,21 @@ ISTRUZIONI PER LA RISPOSTA:
         this.closeAiSearchModal();
         this.closeNotePinModal();
       }
+
+      // Navigazione frecce e rotazione quando il visualizzatore foto è aperto
+      if (isViewerOpen) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          this.prevImageViewerPhoto();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          this.nextImageViewerPhoto();
+        } else if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          this.rotateImageViewer();
+        }
+      }
+
       // Ctrl+S o Cmd+S salva la nota se l'editor è aperto
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         const editorView = document.getElementById('view-editor');
@@ -3886,6 +4112,36 @@ ISTRUZIONI PER LA RISPOSTA:
         }
       }
     });
+
+    // Touch Swipe Gestures per il visualizzatore foto su Smartphone/Tablet
+    const viewerModal = document.getElementById('image-viewer-modal');
+    if (viewerModal) {
+      viewerModal.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length === 1) {
+          this.viewerTouchStartX = e.touches[0].clientX;
+          this.viewerTouchStartY = e.touches[0].clientY;
+        }
+      }, { passive: true });
+
+      viewerModal.addEventListener('touchend', (e) => {
+        if (e.changedTouches && e.changedTouches.length === 1) {
+          const endX = e.changedTouches[0].clientX;
+          const endY = e.changedTouches[0].clientY;
+          const diffX = endX - this.viewerTouchStartX;
+          const diffY = endY - this.viewerTouchStartY;
+
+          if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY)) {
+            if (diffX < 0) {
+              // Swipe verso sinistra -> foto successiva
+              this.nextImageViewerPhoto();
+            } else {
+              // Swipe verso destra -> foto precedente
+              this.prevImageViewerPhoto();
+            }
+          }
+        }
+      }, { passive: true });
+    }
 
     // 3. Listener per input PIN nota protetta
     const notePinInput = document.getElementById('note-pin-input');

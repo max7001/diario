@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="it" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Importatore Foto Diario - MassiNote</title>
+  
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'><path d='M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2zm0-4H7V7h10v2z'/></svg>">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- JSZip CDN per estrarre archivi ZIP / DIARO in memoria -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- SQL.js (WebAssembly SQLite) per analizzare diaro.db se presente -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+
+  <!-- Canvas Confetti per celebrazione salvataggio -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Firebase App, Auth e Firestore SDKs (Compat v10) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.5);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 0.8);
+    }
+    .custom-line-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand & Torna a Diario -->
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold transition-all">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i>
+          <span>Torna a Diario</span>
+        </a>
+        <div class="h-5 w-px bg-slate-200 dark:bg-slate-800"></div>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+            <i data-lucide="image" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h1 class="font-bold text-base leading-tight text-slate-900 dark:text-white">Importatore Foto Diario</h1>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">Associazione visiva e sincronizzazione Cloud Firebase</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloud Status & Live Counters -->
+      <div class="flex items-center gap-3">
+        <div id="cloud-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900/50">
+          <span id="cloud-status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          <span id="cloud-status-text">Connessione Firebase...</span>
+        </div>
+
+        <button id="btn-save-cloud-top" onclick="importer.saveAllMatchedPhotosToFirebase()" class="hidden sm:inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+          <span>Salva su Firebase</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="max-w-7xl mx-auto w-full p-4 sm:p-6 space-y-6 flex-1">
+
+    <!-- STEP 1 & 2: SEZIONE CARICAMENTO & CONFIGURAZIONE -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Box Caricamento File Backup (2 colonne) -->
+      <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold text-xs flex items-center justify-center">1</span>
+              <h2 class="font-bold text-base text-slate-900 dark:text-white">Carica il file di backup o le immagini</h2>
+            </div>
+            <span class="text-xs text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">Supporta .docx, .zip, .diaro, .json o foto</span>
+          </div>
+
+          <!-- Dropzone Interattiva -->
+          <div id="dropzone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 rounded-xl p-6 text-center transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-950/50 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 flex flex-col items-center justify-center gap-3">
+            <input type="file" id="backup-file-input" accept=".docx,.doc,.zip,.diaro,.json,.db,.sqlite,image/*" multiple class="hidden" onchange="importer.handleFileSelect(event)">
+            
+            <div class="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-slate-800 dark:text-slate-200">Trascina qui il tuo file di backup <strong class="text-blue-600 dark:text-blue-400">.DOCX</strong> oppure</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">File Word .DOCX con note e foto incorporate, archivio ZIP Diaro o backup JSON</p>
+            </div>
+            
+            <button type="button" onclick="document.getElementById('backup-file-input').click()" class="mt-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer">
+              <i data-lucide="folder-open" class="w-4 h-4"></i>
+              <span>Sfoglia e Seleziona File .docx</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Parametri di Matching e Info File caricato -->
+        <div id="file-info-bar" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+            <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i>
+            <span id="current-file-name" class="font-medium">Nessun file selezionato</span>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <span>Tolleranza oraria:</span>
+              <select id="matching-tolerance" onchange="importer.recalculateMatching()" class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold">
+                <option value="exact">Esatta (stesso minuto)</option>
+                <option value="5min" selected>± 5 minuti</option>
+                <option value="1hour">± 1 ora</option>
+                <option value="sameday">Stesso giorno</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Box Stato Firebase & Note Cloud (1 colonna) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center">2</span>
+            <h2 class="font-bold text-base text-slate-900 dark:text-white">Database Firebase Diario</h2>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Le note sono caricate in tempo reale dal database Firestore del programma Diario.</p>
+
+          <div class="space-y-2.5 text-xs">
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span class="text-slate-500 dark:text-slate-400 font-medium">Progetto Cloud:</span>
+              <span id="stat-project-id" class="font-bold text-slate-800 dark:text-slate-200">app-create-con-ai</span>
+            </div>
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span class="text-slate-500 dark:text-slate-400 font-medium">Totale note nel DB:</span>
+              <span id="stat-total-firebase-notes" class="font-bold text-blue-600 dark:text-blue-400 text-sm">Caricamento...</span>
+            </div>
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+              <span class="text-slate-500 dark:text-slate-400 font-medium">Note già con foto:</span>
+              <span id="stat-notes-already-photos" class="font-bold text-emerald-600 dark:text-emerald-400">0</span>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="importer.loadFirebaseNotes()" class="mt-4 w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          <span>Ricarica note da Firebase</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- STEP 3: STATISTICHE DI ANALISI E MATCHING -->
+    <div id="stats-dashboard" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1 text-xs font-medium">
+          <span>Note nel Diario</span>
+          <i data-lucide="book-open" class="w-4 h-4 text-blue-500"></i>
+        </div>
+        <div id="badge-total-notes" class="text-2xl font-black text-slate-900 dark:text-white">0</div>
+        <div class="text-[11px] text-slate-400 mt-1">Caricate da Firestore</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1 text-xs font-medium">
+          <span>Foto nel Backup</span>
+          <i data-lucide="images" class="w-4 h-4 text-indigo-500"></i>
+        </div>
+        <div id="badge-total-photos" class="text-2xl font-black text-indigo-600 dark:text-indigo-400">0</div>
+        <div class="text-[11px] text-slate-400 mt-1">Estratte dal file</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1 text-xs font-medium">
+          <span>Note con Foto Abbinate</span>
+          <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500"></i>
+        </div>
+        <div id="badge-matched-notes" class="text-2xl font-black text-emerald-600 dark:text-emerald-400">0</div>
+        <div id="badge-matched-pct" class="text-[11px] text-emerald-500 mt-1">0% delle note</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1 text-xs font-medium">
+          <span>Foto non Assegnate</span>
+          <i data-lucide="help-circle" class="w-4 h-4 text-amber-500"></i>
+        </div>
+        <div id="badge-orphan-photos" class="text-2xl font-black text-amber-600 dark:text-amber-400">0</div>
+        <div class="text-[11px] text-amber-500 mt-1">Assegnabili manualmente</div>
+      </div>
+
+    </div>
+
+    <!-- STEP 4: REVISIONE VISIVA, FILTRI E CONTROLLO CORRETTEZZA -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      
+      <!-- Toolbar di Ricerca e Filtri -->
+      <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        
+        <!-- Filtri Rapidi (Chip) -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 text-xs font-semibold">
+          <button onclick="importer.setFilter('matched')" id="filter-btn-matched" class="px-3 py-1.5 rounded-xl bg-blue-600 text-white shadow-sm transition-all whitespace-nowrap">
+            Con Foto Abbinate (<span id="filter-count-matched">0</span>)
+          </button>
+          <button onclick="importer.setFilter('all')" id="filter-btn-all" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-all whitespace-nowrap">
+            Tutte le Note (<span id="filter-count-all">0</span>)
+          </button>
+          <button onclick="importer.setFilter('unmatched')" id="filter-btn-unmatched" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-all whitespace-nowrap">
+            Senza Foto (<span id="filter-count-unmatched">0</span>)
+          </button>
+          <button onclick="importer.setFilter('orphans')" id="filter-btn-orphans" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-all whitespace-nowrap">
+            Foto Orfane (<span id="filter-count-orphans">0</span>)
+          </button>
+        </div>
+
+        <!-- Barra di Ricerca Full-Text -->
+        <div class="relative flex-1 max-w-md">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input type="text" id="search-input" oninput="importer.handleSearch(event)" placeholder="Cerca nota per titolo, testo o data..." class="w-full pl-9 pr-8 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <button id="search-clear-btn" onclick="importer.clearSearch()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Barra di Azione Globale di Salvataggio -->
+      <div class="px-6 py-3 bg-emerald-50/80 dark:bg-emerald-950/30 border-b border-emerald-100 dark:border-emerald-900/40 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+          <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+          <span>Controlla le foto accanto ad ogni nota prima di confermare il salvataggio sul cloud.</span>
+        </div>
+
+        <button id="btn-save-cloud-bottom" onclick="importer.saveAllMatchedPhotosToFirebase()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+          <span>Conferma e Salva Foto su Firebase (<span id="btn-save-count">0</span> note)</span>
+        </button>
+      </div>
+
+      <!-- Lista Cards Note & Foto Affiancate -->
+      <div id="notes-verification-container" class="divide-y divide-slate-100 dark:divide-slate-800/80 max-h-[70vh] overflow-y-auto p-4 sm:p-6 space-y-4">
+        <!-- Verrà popolato dinamicamente via JS -->
+        <div class="text-center py-16 text-slate-400">
+          <i data-lucide="file-search" class="w-12 h-12 mx-auto mb-3 stroke-1 text-slate-300 dark:text-slate-600"></i>
+          <p class="text-sm font-semibold">In attesa del file di backup...</p>
+          <p class="text-xs mt-1">Carica il file ZIP o JSON in alto per visualizzare l'abbinamento automatico con le note.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= MODALE LIGHTBOX VISUALIZZATORE FOTO ================= -->
+  <div id="photo-viewer-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+      <button onclick="importer.closePhotoViewer()" class="absolute -top-12 right-0 text-white/80 hover:text-white p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+      <img id="viewer-img" src="" alt="Anteprima Foto Ingrandita" class="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl">
+      <p id="viewer-caption" class="text-white text-xs mt-3 font-medium text-center"></p>
+    </div>
+  </div>
+
+  <!-- ================= MODALE DI CONFERMA & PROGRESS BAR UPLOAD ================= -->
+  <div id="upload-progress-modal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 text-center">
+      
+      <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+        <i data-lucide="cloud-upload" class="w-7 h-7 animate-bounce"></i>
+      </div>
+
+      <div>
+        <h3 id="progress-modal-title" class="font-bold text-lg text-slate-900 dark:text-white">Salvataggio su Firebase...</h3>
+        <p id="progress-modal-desc" class="text-xs text-slate-500 dark:text-slate-400 mt-1">Ottimizzazione e memorizzazione delle fotografie nel Cloud.</p>
+      </div>
+
+      <!-- Barra di Progresso -->
+      <div class="space-y-1.5">
+        <div class="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+          <div id="progress-bar-fill" class="h-full bg-emerald-500 rounded-full transition-all duration-200" style="width: 0%"></div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+          <span id="progress-count-text">0 / 0 note</span>
+          <span id="progress-pct-text">0%</span>
+        </div>
+      </div>
+
+      <div id="progress-completed-actions" class="hidden pt-3 flex gap-3">
+        <button onclick="importer.closeProgressModal()" class="flex-1 py-2 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all">
+          Chiudi
+        </button>
+        <a href="index.html" class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all">
+          <i data-lucide="notebook" class="w-4 h-4"></i>
+          <span>Apri Diario</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODALE ASSEGNAZIONE MANUALE FOTO ================= -->
+  <div id="assign-photo-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="font-bold text-base text-slate-900 dark:text-white">Assegna Foto a una Nota</h3>
+        <button onclick="importer.closeAssignModal()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+        <img id="assign-modal-photo-preview" src="" alt="Anteprima" class="w-16 h-16 object-cover rounded-lg">
+        <div class="text-xs">
+          <p id="assign-modal-photo-name" class="font-bold text-slate-800 dark:text-slate-200 truncate max-w-xs"></p>
+          <p id="assign-modal-photo-date" class="text-slate-500 mt-0.5"></p>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto space-y-2" id="assign-modal-notes-list">
+        <!-- Lista note selezionabili -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Script Principale Applicazione -->
+  <script src="import-foto.js"></script>
+</body>
+</html>

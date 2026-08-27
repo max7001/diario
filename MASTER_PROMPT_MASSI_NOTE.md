@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.17)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.19)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.17), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.19), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -57,21 +57,35 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Visualizzazione del contatore token cumulativo e delle note vocali analizzate nella schermata Statistiche.
 
 ======================================================================
-4. REGISTRAZIONE VOCALE & INTERAZIONE REC
+4. REGISTRAZIONE VOCALE, PDF & GALLERIA FOTO A CAROSELLO
 ======================================================================
 - Interazione Hold-to-Record (1,5 Secondi):
   - Tasto "+" centrale mobile ingrandito del +40% (76px con indicatore anulare progress ring a 251px).
   - Se toccato normalmente apre l'editor; se tenuto premuto per 1.5 secondi avvia la registrazione vocale con vibrazione aptica.
   - Nessun suono all'avvio della registrazione; suono armonico discendente di conferma allo stop.
-  - Tolleranza al movimento aumentata e cattura tocco (`setPointerCapture`).
+  - Tolleranza al movimento (60px) e cattura tocco (`setPointerCapture`).
   - Durante la registrazione e durante la continuazione con il tasto REC, il tasto in basso scompare completamente lasciando a schermo solo il riquadro centrale con il contatore.
-- Continuazione della Registrazione (Tasto REC):
-  - Nella finestra di revisione è presente il tasto "REC" per riprendere la registrazione concatenando i segmenti audio.
 - Esportazione PDF per Singola Nota:
   - Icona PDF rossa su ogni card nota per stampare / scaricare la scheda completa in formato A4 con metadati e immagini.
+- Visualizzatore Foto a Carosello & Smart Auto-Rotation:
+  - Cliccando su una foto si apre la galleria carosello con tutte le foto della nota.
+  - Frecce di navigazione a schermo (`chevron-left`, `chevron-right`), badge posizione ("Foto 2 di 5") e barra miniature inferiore.
+  - Supporto gesture Touch Swipe (sinistra/destra) su mobile e frecce da tastiera (`←`, `→`).
+  - Smart Auto-Rotation: foto orizzontali ruotano automaticamente di 90° su schermi verticali per sfruttare l'intero display.
+  - Tasto "Ruota" manuale (o tasto `R`) per ruotare di 90° e tasto "Ripristina".
+- Galleria Foto nell'Editor con Espansione/Compressione (> 4 foto):
+  - Se la nota contiene più di 4 fotografie, all'apertura dell'editor vengono mostrate le prime 4 con una freccia e il badge per espandere/comprimere tutte le altre.
 
 ======================================================================
-5. STRUTTURA DELLE VISTE & NAVIGAZIONE
+5. BACKUP & RIPRISTINO DATI COMPLETO
+======================================================================
+- Esportazione Backup JSON:
+  - Esporta il 100% degli elementi: note, tutte le fotografie (array Base64), registrazioni audio (Base64), stato protezione password (`locked`), meteo, luogo, cartella, etichette e date.
+- Ripristino Backup JSON:
+  - Importa e normalizza tutte le proprietà memorizzandole in modo persistente in IndexedDB e sincronizzandole su Cloud Firestore.
+
+======================================================================
+6. STRUTTURA DELLE VISTE & NAVIGAZIONE
 ======================================================================
 L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 1. **VISTA NOTE (`#view-notes`)**:
@@ -88,16 +102,16 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.17".
+   - Footer finale: "MassiNote WebApp • Versione 2.19".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
-   - Foto multiple con visualizzatore fullscreen, audio allegato, meteo e geolocalizzazione automatica.
+   - Galleria foto con compressione a 4 elementi ed espansione a fisarmonica, audio allegato, meteo e geolocalizzazione automatica.
 
 ======================================================================
-6. REGOLE DI QUALITÀ & VERSIONAMENTO
+7. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.17`.
+- Versione attuale: `2.19`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```
