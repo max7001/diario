@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.19';
+const APP_VERSION = '2.20';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -402,83 +402,183 @@ class FirebaseStorageManager {
   }
 }
 
-// ================= INDEXED DB MANAGER (ARCHIVIAZIONE AUTONOMA LOCALE) =================
+// ================= INDEXED DB MANAGER (ARCHIVIAZIONE AUTONOMA LOCALE CON FALLBACK SICURO) =================
 class NoteDatabase {
   constructor() {
     this.db = null;
+    this.useFallback = false;
+    this.fallbackKey = 'massinote_offline_notes_v1';
   }
 
   async init() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('date', 'date', { unique: false });
-          store.createIndex('title', 'title', { unique: false });
-          store.createIndex('folder', 'folder', { unique: false });
-        }
-      };
-      request.onsuccess = (event) => {
-        this.db = event.target.result;
-        resolve(this.db);
-      };
-      request.onerror = (event) => {
-        console.error('Errore apertura IndexedDB:', event.target.error);
-        reject(event.target.error);
-      };
+    if (typeof indexedDB === 'undefined') {
+      console.warn('IndexedDB non supportato nel contesto corrente, attivo fallback su LocalStorage.');
+      this.useFallback = true;
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onupgradeneeded = (event) => {
+          try {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+              store.createIndex('date', 'date', { unique: false });
+              store.createIndex('title', 'title', { unique: false });
+              store.createIndex('folder', 'folder', { unique: false });
+            }
+          } catch (upgradeErr) {
+            console.warn('Avviso onupgradeneeded IndexedDB:', upgradeErr);
+          }
+        };
+
+        request.onsuccess = (event) => {
+          this.db = event.target.result;
+          this.useFallback = false;
+          resolve(this.db);
+        };
+
+        request.onerror = (event) => {
+          console.warn('IndexedDB non accessibile o bloccato, uso fallback LocalStorage:', event?.target?.error);
+          this.useFallback = true;
+          resolve(null);
+        };
+
+        request.onblocked = () => {
+          console.warn('IndexedDB bloccato da altra sessione, uso fallback LocalStorage.');
+          this.useFallback = true;
+          resolve(null);
+        };
+      } catch (err) {
+        console.warn('Eccezione durante open IndexedDB, uso fallback LocalStorage:', err);
+        this.useFallback = true;
+        resolve(null);
+      }
     });
   }
 
+  // --- METODI FALLBACK LOCALSTORAGE ---
+  _getFallbackNotes() {
+    try {
+      const data = localStorage.getItem(this.fallbackKey);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.warn('Errore lettura fallback LocalStorage:', e);
+      return [];
+    }
+  }
+
+  _saveFallbackNotes(notes) {
+    try {
+      localStorage.setItem(this.fallbackKey, JSON.stringify(notes || []));
+    } catch (e) {
+      console.warn('Errore salvataggio fallback LocalStorage:', e);
+    }
+  }
+
   async getAll() {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    if (!this.db && !this.useFallback) await this.init();
+
+    if (this.useFallback || !this.db) {
+      return this._getFallbackNotes();
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAll();
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const res = request.result || [];
+          try { this._saveFallbackNotes(res); } catch (_) {}
+          resolve(res);
+        };
+        request.onerror = () => {
+          console.warn('Errore getAll IndexedDB, fallback su LocalStorage:', request.error);
+          resolve(this._getFallbackNotes());
+        };
       } catch (err) {
-        reject(err);
+        console.warn('Eccezione transazione getAll IndexedDB:', err);
+        resolve(this._getFallbackNotes());
       }
     });
   }
 
   async get(id) {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    if (!this.db && !this.useFallback) await this.init();
+
+    if (this.useFallback || !this.db) {
+      const notes = this._getFallbackNotes();
+      return notes.find(n => String(n.id) === String(id));
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.get(id);
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => {
+          const notes = this._getFallbackNotes();
+          resolve(notes.find(n => String(n.id) === String(id)));
+        };
       } catch (err) {
-        reject(err);
+        const notes = this._getFallbackNotes();
+        resolve(notes.find(n => String(n.id) === String(id)));
       }
     });
   }
 
   async put(note) {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    if (!note || !note.id) return null;
+    if (!this.db && !this.useFallback) await this.init();
+
+    const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(note.id));
+    fallbackNotes.push(note);
+    this._saveFallbackNotes(fallbackNotes);
+
+    if (this.useFallback || !this.db) {
+      return note.id;
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.put(note);
         request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => {
+          console.warn('Avviso put IndexedDB, salvato nel fallback:', request.error);
+          resolve(note.id);
+        };
       } catch (err) {
-        reject(err);
+        console.warn('Eccezione put IndexedDB, salvato nel fallback:', err);
+        resolve(note.id);
       }
     });
   }
 
   async putBatch(notes) {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    if (!Array.isArray(notes)) return 0;
+    if (!this.db && !this.useFallback) await this.init();
+
+    const idMap = new Map();
+    for (const n of this._getFallbackNotes()) {
+      if (n && n.id) idMap.set(String(n.id), n);
+    }
+    for (const n of notes) {
+      if (n && n.id) idMap.set(String(n.id), n);
+    }
+    this._saveFallbackNotes(Array.from(idMap.values()));
+
+    if (this.useFallback || !this.db) {
+      return notes.length;
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
@@ -488,40 +588,56 @@ class NoteDatabase {
           }
         }
         transaction.oncomplete = () => resolve(notes.length);
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error || new Error('Transazione interrotta'));
+        transaction.onerror = () => {
+          console.warn('Avviso transazione putBatch IndexedDB:', transaction.error);
+          resolve(notes.length);
+        };
+        transaction.onabort = () => resolve(notes.length);
       } catch (err) {
-        reject(err);
+        console.warn('Eccezione transazione putBatch IndexedDB:', err);
+        resolve(notes.length);
       }
     });
   }
 
   async delete(id) {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    if (!this.db && !this.useFallback) await this.init();
+
+    const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(id));
+    this._saveFallbackNotes(fallbackNotes);
+
+    if (this.useFallback || !this.db) {
+      return true;
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.delete(id);
         request.onsuccess = () => resolve(true);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => resolve(true);
       } catch (err) {
-        reject(err);
+        resolve(true);
       }
     });
   }
 
   async clear() {
-    if (!this.db) await this.init();
-    return new Promise((resolve, reject) => {
+    this._saveFallbackNotes([]);
+    if (this.useFallback || !this.db) {
+      return true;
+    }
+
+    return new Promise((resolve) => {
       try {
         const transaction = this.db.transaction([STORE_NAME], 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.clear();
         request.onsuccess = () => resolve(true);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => resolve(true);
       } catch (err) {
-        reject(err);
+        resolve(true);
       }
     });
   }
@@ -762,20 +878,34 @@ class AppController {
   }
 
   async init() {
+    // 1. Inizializzazione archivio locale (IndexedDB con fallback automatico su LocalStorage)
     try {
-      // 1. Inizializzazione archivio locale (IndexedDB)
       await this.db.init();
+    } catch (dbErr) {
+      console.warn('Avviso inizializzazione storage locale:', dbErr);
+    }
+
+    // 2. Inizializzazione Tema e Versione Badge
+    try {
       this.initTheme();
-      
       const versionEl = document.getElementById('app-version-badge');
       if (versionEl) versionEl.textContent = APP_VERSION;
+    } catch (uiErr) {
+      console.warn('Avviso inizializzazione interfaccia base:', uiErr);
+    }
 
+    // 3. Caricamento note e Rendering iniziale
+    try {
       await this.loadNotes();
       this.initEventListeners();
       this.render();
       this.updateStorageStats();
+    } catch (renderErr) {
+      console.error('Avviso rendering iniziale note:', renderErr);
+    }
 
-      // 2. Inizializzazione sincronizzazione Firebase Cloud (Firestore)
+    // 4. Inizializzazione sincronizzazione Firebase Cloud (Firestore) in modo isolato
+    try {
       this.setCloudStatus('syncing', 'Connessione...');
       const fbOnline = await this.firebase.init();
 
@@ -789,7 +919,6 @@ class AppController {
               await this.mergeCloudNotes(cloudNotes);
               this.setCloudStatus('online', 'Sincronizzato');
             } else if (this.notes.length > 0) {
-              // Se Firestore è vuoto ma abbiamo note locali, sincronizza il cloud
               this.firebase.saveBatch(this.notes).catch(e => console.warn('Sync initial batch warning:', e));
             }
           },
@@ -801,17 +930,21 @@ class AppController {
       } else {
         this.setCloudStatus('offline', 'Offline (Locale)');
       }
-
-      // 3. Inizializzazione Schermata di Blocco PIN (con scadenza 3 ore)
-      this.initLockScreen();
-    } catch (e) {
-      console.error('Errore inizializzazione app:', e);
-      this.showToast('Errore nel caricamento del database', 'error');
+    } catch (fbErr) {
+      console.warn('Firebase non attivo o offline:', fbErr);
       this.setCloudStatus('offline', 'Offline (Locale)');
     }
 
+    // 5. Inizializzazione Schermata di Blocco PIN (con scadenza 3 ore)
+    try {
+      this.initLockScreen();
+    } catch (lockErr) {
+      console.warn('Avviso lock screen:', lockErr);
+    }
+
+    // 6. Rendering icone Lucide
     if (window.lucide) {
-      lucide.createIcons();
+      try { lucide.createIcons(); } catch (_) {}
     }
   }
 

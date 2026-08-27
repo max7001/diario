@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.19)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.20)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.19), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.20), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -16,7 +16,7 @@ Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (V
 L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - `index.html`: Struttura semantica completa, Tailwind CSS v3 via CDN, Lucide Icons via CDN, Canvas Confetti.
 - `style.css`: Stili personalizzati, animazioni (fade-in, scale-in, slide-up, shake), textarea auto-espandibile, scrollbar nascoste e gestione dark mode.
-- `app.js`: Logica completa ad oggetti (`AppController`, `IndexedDBManager`, `FirebaseStorageManager`), nessun codice parziale o placeholder.
+- `app.js`: Logica completa ad oggetti (`AppController`, `NoteDatabase` con doppio motore IndexedDB/LocalStorage, `FirebaseStorageManager`), nessun codice parziale o placeholder.
 - `manifest.json` & `sw.js`: PWA installabile con cache offline dei file statici.
 
 ======================================================================
@@ -36,7 +36,16 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - L'apertura della nota o l'esportazione richiede il PIN di sicurezza `1804` (verificato tramite hash crittografico SHA-256 nella modale `#note-pin-modal`).
 
 ======================================================================
-3. INTEGRAZIONE INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.6 FLASH)
+3. MOTORE DI PERSISTENZA IBRIDO & RESILIENTE (NOTE DATABASE)
+======================================================================
+- Architettura a Doppio Livello:
+  - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`).
+  - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
+  - Se IndexedDB è bloccato, in modalità privata, o non supportato dal browser, l'app passa all'istante al fallback locale senza generare errori all'avvio.
+  - Tutte le operazioni (`getAll`, `get`, `put`, `putBatch`, `delete`, `clear`) sono protette da try/catch e mantengono una copia shadow sincronizzata.
+
+======================================================================
+4. INTEGRAZIONE INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.6 FLASH)
 ======================================================================
 - Endpoint Principale: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`
 - Fallback Automatico: `gemini-3.5-flash` in caso di errore sulla versione 3.6.
@@ -57,7 +66,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Visualizzazione del contatore token cumulativo e delle note vocali analizzate nella schermata Statistiche.
 
 ======================================================================
-4. REGISTRAZIONE VOCALE, PDF & GALLERIA FOTO A CAROSELLO
+5. REGISTRAZIONE VOCALE, PDF & GALLERIA FOTO A CAROSELLO
 ======================================================================
 - Interazione Hold-to-Record (1,5 Secondi):
   - Tasto "+" centrale mobile ingrandito del +40% (76px con indicatore anulare progress ring a 251px).
@@ -77,15 +86,15 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Se la nota contiene più di 4 fotografie, all'apertura dell'editor vengono mostrate le prime 4 con una freccia e il badge per espandere/comprimere tutte le altre.
 
 ======================================================================
-5. BACKUP & RIPRISTINO DATI COMPLETO
+6. BACKUP & RIPRISTINO DATI COMPLETO
 ======================================================================
 - Esportazione Backup JSON:
   - Esporta il 100% degli elementi: note, tutte le fotografie (array Base64), registrazioni audio (Base64), stato protezione password (`locked`), meteo, luogo, cartella, etichette e date.
 - Ripristino Backup JSON:
-  - Importa e normalizza tutte le proprietà memorizzandole in modo persistente in IndexedDB e sincronizzandole su Cloud Firestore.
+  - Importa e normalizza tutte le proprietà memorizzandole in modo persistente in IndexedDB/LocalStorage e sincronizzandole su Cloud Firestore.
 
 ======================================================================
-6. STRUTTURA DELLE VISTE & NAVIGAZIONE
+7. STRUTTURA DELLE VISTE & NAVIGAZIONE
 ======================================================================
 L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 1. **VISTA NOTE (`#view-notes`)**:
@@ -102,16 +111,16 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.19".
+   - Footer finale: "MassiNote WebApp • Versione 2.20".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
    - Galleria foto con compressione a 4 elementi ed espansione a fisarmonica, audio allegato, meteo e geolocalizzazione automatica.
 
 ======================================================================
-7. REGOLE DI QUALITÀ & VERSIONAMENTO
+8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.19`.
+- Versione attuale: `2.20`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```
