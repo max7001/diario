@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.23)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.24)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.23), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.24), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -68,8 +68,11 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Visualizzazione del contatore token cumulativo e delle note vocali analizzate nella schermata Statistiche.
 
 ======================================================================
-5. REGISTRAZIONE VOCALE, PDF & GALLERIA FOTO A CAROSELLO
+5. REGISTRAZIONE VOCALE, PDF, COMPRESSIONE FOTO & GALLERIA A CAROSELLO
 ======================================================================
+- Compressione e Ridimensionamento Intelligente delle Fotografie:
+  - Caricamento da galleria/fotocamera (`resizeAndEncodeImage`): ridimensionamento automatico a max 1080px e compressione JPEG 0.72 (~60-100 KB per foto).
+  - Pre-sincronizzazione Cloud (`prepareNoteForCloud` & `compressBase64Image`): compressione al volo per garantire che ogni nota con foto rientri sempre nel limite di 1 MB di Firestore e venga sincronizzata regolarmente.
 - Interazione Hold-to-Record (1,5 Secondi):
   - Tasto "+" centrale mobile ingrandito del +40% (76px con indicatore anulare progress ring a 251px).
   - Se toccato normalmente apre l'editor; se tenuto premuto per 1.5 secondi avvia la registrazione vocale con vibrazione aptica.
@@ -114,7 +117,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
    - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
-   - Footer finale: "MassiNote WebApp • Versione 2.23".
+   - Footer finale: "MassiNote WebApp • Versione 2.24".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
@@ -123,7 +126,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 ======================================================================
 8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.23`.
+- Versione attuale: `2.24`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```

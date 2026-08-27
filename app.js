@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.23';
+const APP_VERSION = '2.24';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -225,6 +225,61 @@ function parseDateSafe(input) {
   return new Date();
 }
 
+// Helper asincrono per ridimensionamento e compressione Base64 ad alta efficienza per Cloud Sync
+async function compressBase64Image(base64Str, maxDimension = 900, quality = 0.7) {
+  if (!base64Str || typeof base64Str !== 'string' || !base64Str.startsWith('data:image/')) {
+    return base64Str;
+  }
+
+  // Se l'immagine è già inferiore a 75KB, è già idonea per la sincronizzazione cloud
+  if (base64Str.length < 75000) {
+    return base64Str;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let width = img.width || 1;
+          let height = img.height || 1;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          if (compressedDataUrl && compressedDataUrl.length < base64Str.length) {
+            resolve(compressedDataUrl);
+          } else {
+            resolve(base64Str);
+          }
+        } catch (canvasErr) {
+          console.warn('Avviso compressione canvas:', canvasErr);
+          resolve(base64Str);
+        }
+      };
+      img.onerror = () => resolve(base64Str);
+      img.src = base64Str;
+    } catch (err) {
+      console.warn('Avviso elaborazione immagine Base64:', err);
+      resolve(base64Str);
+    }
+  });
+}
+
 // ================= FIRESTORE CLOUD STORAGE MANAGER =================
 class FirebaseStorageManager {
   constructor() {
@@ -341,22 +396,59 @@ class FirebaseStorageManager {
     return this.unsubscribeListener;
   }
 
+  async prepareNoteForCloud(note) {
+    if (!note) return null;
+    const cleanNote = { ...note };
+
+    // Ottimizza e riduci le fotografie per garantire il salvataggio su Firestore (< 1MB limite documento)
+    if (cleanNote.photos && Array.isArray(cleanNote.photos) && cleanNote.photos.length > 0) {
+      const optimizedPhotos = [];
+      let totalSize = 0;
+      const MAX_CLOUD_PHOTOS_SIZE = 750000; // Limite di sicurezza 750 KB per tutte le foto della nota
+
+      for (let i = 0; i < cleanNote.photos.length; i++) {
+        let photo = cleanNote.photos[i];
+        if (typeof photo === 'string' && photo.startsWith('data:image/')) {
+          // Se la singola foto supera 70KB, comprimila e ridimensionala per il cloud
+          if (photo.length > 70000) {
+            try {
+              photo = await compressBase64Image(photo, 900, 0.70);
+            } catch (_) {}
+          }
+
+          if (totalSize + photo.length < MAX_CLOUD_PHOTOS_SIZE) {
+            optimizedPhotos.push(photo);
+            totalSize += photo.length;
+          } else {
+            // Se lo spazio totale è quasi al limite, applica una compressione più compatta
+            try {
+              const compactPhoto = await compressBase64Image(photo, 640, 0.58);
+              if (totalSize + compactPhoto.length < MAX_CLOUD_PHOTOS_SIZE) {
+                optimizedPhotos.push(compactPhoto);
+                totalSize += compactPhoto.length;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+      cleanNote.photos = optimizedPhotos;
+    }
+
+    if (cleanNote.audio && typeof cleanNote.audio === 'string' && cleanNote.audio.length > 700000) {
+      delete cleanNote.audio;
+    }
+
+    return cleanNote;
+  }
+
   async saveNote(note) {
     const col = this.getNotesCollection();
     if (!col) return;
     try {
-      const cleanNote = { ...note };
-      // Sanitizza per Firestore document limit (1MB max)
-      if (cleanNote.photos && Array.isArray(cleanNote.photos)) {
-        const totalPhotosSize = cleanNote.photos.reduce((acc, p) => acc + (typeof p === 'string' ? p.length : 0), 0);
-        if (totalPhotosSize > 700000) {
-          cleanNote.photos = [];
-        }
+      const cleanNote = await this.prepareNoteForCloud(note);
+      if (cleanNote && cleanNote.id) {
+        await col.doc(cleanNote.id).set(cleanNote, { merge: true });
       }
-      if (cleanNote.audio && typeof cleanNote.audio === 'string' && cleanNote.audio.length > 700000) {
-        delete cleanNote.audio;
-      }
-      await col.doc(note.id).set(cleanNote, { merge: true });
     } catch (e) {
       console.warn('Avviso salvataggio Firebase (salvato regolarmente in IndexedDB):', e);
     }
@@ -375,24 +467,20 @@ class FirebaseStorageManager {
   async saveBatch(notes) {
     if (!this.db || !notes || notes.length === 0) return;
     try {
-      const BATCH_SIZE = 100;
+      const BATCH_SIZE = 40;
       for (let i = 0; i < notes.length; i += BATCH_SIZE) {
         const chunk = notes.slice(i, i + BATCH_SIZE);
         const batch = this.db.batch();
         const col = this.getNotesCollection();
-        chunk.forEach((n) => {
+        for (const n of chunk) {
           if (n && n.id) {
-            const cleanNote = { ...n };
-            if (cleanNote.photos && Array.isArray(cleanNote.photos)) {
-              cleanNote.photos = [];
+            const cleanNote = await this.prepareNoteForCloud(n);
+            if (cleanNote) {
+              const ref = col.doc(cleanNote.id);
+              batch.set(ref, cleanNote, { merge: true });
             }
-            if (cleanNote.audio) {
-              delete cleanNote.audio;
-            }
-            const ref = col.doc(n.id);
-            batch.set(ref, cleanNote, { merge: true });
           }
-        });
+        }
         await batch.commit();
       }
     } catch (e) {
@@ -3434,7 +3522,7 @@ ISTRUZIONI PER LA RISPOSTA:
       if (!file.type.startsWith('image/')) continue;
 
       try {
-        const base64 = await this.resizeAndEncodeImage(file);
+        const base64 = await this.resizeAndEncodeImage(file, 1080, 0.72);
         this.editorPhotos.push(base64);
       } catch (err) {
         console.error('Errore caricamento immagine:', err);
@@ -3446,14 +3534,14 @@ ISTRUZIONI PER LA RISPOSTA:
     event.target.value = '';
   }
 
-  resizeAndEncodeImage(file, maxDimension = 1400, quality = 0.82) {
+  resizeAndEncodeImage(file, maxDimension = 1080, quality = 0.72) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          let width = img.width;
-          let height = img.height;
+          let width = img.width || 1;
+          let height = img.height || 1;
 
           if (width > maxDimension || height > maxDimension) {
             if (width > height) {
