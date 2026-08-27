@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.16)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.17)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,14 +8,14 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.16), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.17), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
 ======================================================================
 L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - `index.html`: Struttura semantica completa, Tailwind CSS v3 via CDN, Lucide Icons via CDN, Canvas Confetti.
-- `style.css`: Stili personalizzati, animazioni (fade-in, scale-in, slide-up), textarea auto-espandibile, scrollbar nascoste e gestione dark mode.
+- `style.css`: Stili personalizzati, animazioni (fade-in, scale-in, slide-up, shake), textarea auto-espandibile, scrollbar nascoste e gestione dark mode.
 - `app.js`: Logica completa ad oggetti (`AppController`, `IndexedDBManager`, `FirebaseStorageManager`), nessun codice parziale o placeholder.
 - `manifest.json` & `sw.js`: PWA installabile con cache offline dei file statici.
 
@@ -30,11 +30,10 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - La configurazione Firebase e la chiave Google Gemini AI sono memorizzate in un vault a byte multipli offuscato con scorrimento dinamico.
   - Ricostruzione dinamica in RAM a runtime tramite `_getDecryptedCredentials()`, `getDecryptedGeminiKey()` e `getDecryptedFirebaseConfig()`.
 - Timeout Inattività: Blocco automatico dell'app dopo 3 ore di inattività (`10800000 ms`), controllando il timestamp in `localStorage`.
-- Schermata di Sblocco (#lock-screen): 
-  - Design pulito ed elegante con icona lucchetto e campo PIN centrale con focus automatico.
-  - Nessun tastierino a 12 bottoni a schermo: l'utente digita direttamente dalla tastiera fisica o virtuale del dispositivo.
-  - Sblocco istantaneo alla digitazione della quarta cifra corretta o alla pressione di Invio (nessun tasto "Sblocca").
-  - Animazione shake e messaggio rosso in caso di PIN errato.
+- Protezione con Password su Singola Nota:
+  - Tasto Chiave/Lucchetto su ogni card della nota.
+  - Se attivato (`note.locked = true`), l'anteprima del testo e le miniature delle foto vengono oscurate.
+  - L'apertura della nota o l'esportazione richiede il PIN di sicurezza `1804` (verificato tramite hash crittografico SHA-256 nella modale `#note-pin-modal`).
 
 ======================================================================
 3. INTEGRAZIONE INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.6 FLASH)
@@ -58,22 +57,18 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Visualizzazione del contatore token cumulativo e delle note vocali analizzate nella schermata Statistiche.
 
 ======================================================================
-4. REGISTRAZIONE VOCALE & CONTINUAZIONE REC TRAMITE RIQUADRO CENTRALE
+4. REGISTRAZIONE VOCALE & INTERAZIONE REC
 ======================================================================
-- Interazione Hold-to-Record (~2 Secondi):
-  - Tasto "+" centrale (FAB mobile o desktop): se premuto normalmente apre l'editor; se tenuto premuto per ~2 secondi (con indicatore SVG progress ring) avvia la registrazione vocale e fa vibrare il dispositivo.
-  - Al rilascio del tasto, la registrazione si interrompe istantaneamente e apre la finestra di revisione con 3 tasti (Cestino, REC, Salva IA).
+- Interazione Hold-to-Record (1,5 Secondi):
+  - Tasto "+" centrale mobile ingrandito del +40% (76px con indicatore anulare progress ring a 251px).
+  - Se toccato normalmente apre l'editor; se tenuto premuto per 1.5 secondi avvia la registrazione vocale con vibrazione aptica.
+  - Nessun suono all'avvio della registrazione; suono armonico discendente di conferma allo stop.
+  - Tolleranza al movimento aumentata e cattura tocco (`setPointerCapture`).
+  - Durante la registrazione e durante la continuazione con il tasto REC, il tasto in basso scompare completamente lasciando a schermo solo il riquadro centrale con il contatore.
 - Continuazione della Registrazione (Tasto REC):
-  - Nella finestra di revisione è presente il tasto "REC". Cliccandolo la registrazione riprende, concatenando automaticamente i blocchi audio registrati.
-  - Non si apre alcuna nota e la tastiera virtuale mobile rimane completamente chiusa.
-  - Lo schermo mostra unicamente il riquadro centrale nero/rosso con il contatore (tempo cumulativo).
-  - **Tocco del Riquadro Centrale**: Toccando direttamente il riquadro al centro dello schermo, la registrazione si ferma e torna al popup dei 3 tasti (nessun pulsante extra ridondante in basso).
-- Elaborazione e Apertura Nota su "Salva (IA)":
-  - Premendo "Salva (IA)", l'audio completo combinato viene inviato a Gemini per l'analisi.
-  - Al termine dell'analisi, viene creata la nota e aperta direttamente nell'editor con titolo e testo compilati per la consultazione o modifica.
-- Segnali Acustici Web Audio API (Senza dipendenze esterne):
-  - Avvio Registrazione / Ripresa: doppio tono armonico ascendente chiaro (`520Hz -> 880Hz`).
-  - Termine Registrazione: tono discendente morbido di conferma (`880Hz -> 440Hz`).
+  - Nella finestra di revisione è presente il tasto "REC" per riprendere la registrazione concatenando i segmenti audio.
+- Esportazione PDF per Singola Nota:
+  - Icona PDF rossa su ogni card nota per stampare / scaricare la scheda completa in formato A4 con metadati e immagini.
 
 ======================================================================
 5. STRUTTURA DELLE VISTE & NAVIGAZIONE
@@ -81,16 +76,19 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 1. **VISTA NOTE (`#view-notes`)**:
    - Barra di ricerca con tasti filtro: "Tutte", "Con Foto", e tasto "AI" per ricerca generativa.
-   - Vista a griglia responsiva o compatta con badge foto, meteo, luogo, audio e date italiane formattate.
+   - Card note con data italiana, badge foto/audio/meteo/luogo/cartella/lucchetto, tasti Condividi, PDF, Chiave e Cestino.
+   - Su schermi grandi, il tasto "+ Nuova Nota" è posizionato al centro della barra superiore.
 2. **VISTA CALENDARIO (`#view-calendar`)**:
    - Griglia mensile completa, navigazione mese/anno, indicatore note per giorno e visualizzatore note del giorno.
 3. **VISTA STATISTICHE (`#view-stats`)**:
-   - 4 Card KPI (Totale Note, Note con Foto, Parole Totali, Località/Meteo).
+   - 6 Card KPI: "Totale note", "Note protette", "Note Audio AI", "Note con foto", "Parole totali", "Località / Meteo".
    - 2 Card Dettaglio: "Spazio Database" (MB) e "Token AI (Audio)".
-   - 3 Sezioni Comprimibili con freccia e badge (Distribuzione Note per Anno, Località più frequenti, Cartelle & Categorie).
+   - 3 Sezioni Comprimibili: Distribuzione Note per Anno, Località più frequenti, Cartelle & Categorie.
 4. **VISTA IMPOSTAZIONI (`#view-settings`)**:
-   - Tema chiaro/scuro, Backup/Restore JSON, Archiviazione locale e cancellazione sicura note.
-   - Footer finale: "MassiNote WebApp • Versione 2.16".
+   - Tema chiaro/scuro.
+   - Box compatto "Backup & Ripristino Dati" con tasti affiancati "Backup" e "Ripristina".
+   - Box "Archiviazione Locale" con contatore a sinistra e tasto "Cancella tutte le note" a destra.
+   - Footer finale: "MassiNote WebApp • Versione 2.17".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header fisso in cima con pulsanti Chiudi, Data/ora, Foto, Salva (blu), Cestino (rosso).
    - Textarea auto-espandibile in altezza (`scrollHeight`, min 250px).
@@ -99,8 +97,7 @@ L'app dispone di 5 viste principali commutabili tramite `switchView(viewName)`:
 ======================================================================
 6. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.16`.
+- Versione attuale: `2.17`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
-- Toast feedback non bloccante per ogni azione dell'utente.
 ```

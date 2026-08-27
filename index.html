@@ -51,8 +51,8 @@
   <header id="main-header" class="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 transition-colors">
     <div class="max-w-5xl mx-auto flex items-center justify-between gap-3">
       
-      <!-- Brand & Titolo -->
-      <div class="flex items-center gap-2.5 cursor-pointer" onclick="app.switchView('notes')">
+      <!-- Brand & Titolo a Sinistra -->
+      <div class="flex items-center gap-2.5 cursor-pointer shrink-0" onclick="app.switchView('notes')">
         <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
           <i data-lucide="notebook-pen" class="w-5 h-5"></i>
         </div>
@@ -69,9 +69,17 @@
         </div>
       </div>
 
-      <!-- Azioni Header Desktop/Tablet -->
-      <div class="flex items-center gap-2">
-        <!-- Desktop Navigation Tabs -->
+      <!-- Tasto + Nuova Nota Desktop posizionato al CENTRO -->
+      <div class="hidden md:flex items-center justify-center flex-1">
+        <button id="desktop-add-btn" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition-all select-none cursor-pointer" title="Clicca per nuova nota, tieni premuto 1.5s per registrare la voce">
+          <i data-lucide="plus" id="desktop-add-icon-plus" class="w-4 h-4 stroke-[2.5]"></i>
+          <i data-lucide="square" id="desktop-add-icon-stop" class="w-4 h-4 fill-current hidden text-red-300 animate-pulse"></i>
+          <span id="desktop-add-text">Nuova Nota</span>
+        </button>
+      </div>
+
+      <!-- Desktop Navigation Tabs a Destra -->
+      <div class="flex items-center gap-2 shrink-0">
         <div class="hidden md:flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1 text-sm font-medium">
           <button onclick="app.switchView('notes')" id="nav-desktop-notes" class="px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
             <i data-lucide="file-text" class="w-4 h-4"></i>
@@ -90,13 +98,6 @@
             <span>Impostazioni</span>
           </button>
         </div>
-
-        <!-- Desktop Quick Add Button con supporto registrazione a pressione prolungata -->
-        <button id="desktop-add-btn" class="hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition-all select-none" title="Clicca per nuova nota, tieni premuto 3 secondi per registrare la voce">
-          <i data-lucide="plus" id="desktop-add-icon-plus" class="w-4 h-4 stroke-[2.5]"></i>
-          <i data-lucide="square" id="desktop-add-icon-stop" class="w-4 h-4 fill-current hidden text-red-300 animate-pulse"></i>
-          <span id="desktop-add-text">Nuova Nota</span>
-        </button>
       </div>
 
     </div>
@@ -269,8 +270,9 @@
         <span class="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">Panoramica completa</span>
       </div>
 
-      <!-- KPI Summary Cards -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <!-- KPI Summary Cards (6 Card Totali) -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <!-- 1. Totale Note -->
         <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div class="flex items-center justify-between text-blue-600 mb-1">
             <span class="text-xs font-bold uppercase text-slate-400">Totale Note</span>
@@ -280,6 +282,27 @@
           <div class="text-[11px] text-slate-400 mt-0.5">Appunti salvati</div>
         </div>
 
+        <!-- 2. Note Protette (dopo Totale Note) -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-amber-500 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Note Protette</span>
+            <i data-lucide="lock" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-protected-notes" class="text-2xl font-extrabold text-amber-600 dark:text-amber-400">0</div>
+          <div id="stat-protected-pct" class="text-[11px] text-amber-500 font-medium mt-0.5">0% protette da PIN</div>
+        </div>
+
+        <!-- 3. Note Audio AI (prima di Note con Foto) -->
+        <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div class="flex items-center justify-between text-purple-600 mb-1">
+            <span class="text-xs font-bold uppercase text-slate-400">Note Audio AI</span>
+            <i data-lucide="mic" class="w-4 h-4"></i>
+          </div>
+          <div id="stat-audio-notes" class="text-2xl font-extrabold text-purple-600 dark:text-purple-400">0</div>
+          <div id="stat-audio-pct" class="text-[11px] text-purple-500 font-medium mt-0.5">0% del totale</div>
+        </div>
+
+        <!-- 4. Note con Foto -->
         <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div class="flex items-center justify-between text-pink-500 mb-1">
             <span class="text-xs font-bold uppercase text-slate-400">Note con Foto</span>
@@ -289,6 +312,7 @@
           <div id="stat-photos-pct" class="text-[11px] text-pink-500 font-medium mt-0.5">0% del totale</div>
         </div>
 
+        <!-- 5. Parole Totali -->
         <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <div class="flex items-center justify-between text-emerald-500 mb-1">
             <span class="text-xs font-bold uppercase text-slate-400">Parole Totali</span>
@@ -298,13 +322,14 @@
           <div id="stat-avg-words" class="text-[11px] text-slate-400 mt-0.5">Media: 0 parole</div>
         </div>
 
+        <!-- 6. Località / Meteo -->
         <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div class="flex items-center justify-between text-amber-500 mb-1">
+          <div class="flex items-center justify-between text-indigo-500 mb-1">
             <span class="text-xs font-bold uppercase text-slate-400">Località / Meteo</span>
             <i data-lucide="map-pin" class="w-4 h-4"></i>
           </div>
           <div id="stat-locations-count" class="text-2xl font-extrabold text-slate-900 dark:text-white">0</div>
-          <div id="stat-avg-temp" class="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">Meteo registrato</div>
+          <div id="stat-avg-temp" class="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium mt-0.5">Meteo registrato</div>
         </div>
       </div>
 
@@ -443,85 +468,51 @@
         </div>
       </div>
 
-      <!-- 2. Backup & Ripristino Dati Card -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        
+      <!-- 2. Backup & Ripristino Dati Card Compattata -->
+      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
           <i data-lucide="database" class="w-4 h-4 text-blue-600"></i>
           <span>Backup & Ripristino Dati</span>
         </h3>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          Puoi salvare una copia di sicurezza completa del tuo archivio in formato <strong>JSON</strong> (comprensivo di fotografie, meteo, luoghi e cartelle) oppure ripristinarlo in qualsiasi momento.
-        </p>
 
-        <!-- Pulsanti Azione Backup / Restore JSON -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          
-          <!-- 1. Esporta Backup JSON Completo -->
-          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
-            <div>
-              <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 text-sm">
-                <i data-lucide="download-cloud" class="w-4 h-4 text-emerald-600"></i>
-                <span>Backup Completo (.JSON)</span>
-              </div>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Include tutte le note, fotografie, meteo, cartelle e date.</p>
-            </div>
-            <button onclick="app.exportJsonBackup()" class="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all text-center flex items-center justify-center gap-1.5">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i>
-              <span>Scarica Backup JSON</span>
-            </button>
-          </div>
+        <!-- Pulsanti affiancati compatti Backup e Ripristina -->
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <button onclick="app.exportJsonBackup()" class="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm transition-all text-center flex items-center justify-center gap-2 cursor-pointer" title="Scarica copia di sicurezza JSON">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>Backup</span>
+          </button>
 
-          <!-- 2. Ripristina Backup JSON -->
-          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between space-y-3">
-            <div>
-              <div class="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 text-sm">
-                <i data-lucide="upload-cloud" class="w-4 h-4 text-amber-600"></i>
-                <span>Ripristina Backup (.JSON)</span>
-              </div>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Carica un file di backup JSON precedentemente esportato.</p>
-            </div>
-            <input type="file" id="json-file-input" accept=".json" class="hidden" onchange="app.handleJsonBackupImport(event)">
-            <button onclick="document.getElementById('json-file-input').click()" class="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all text-center flex items-center justify-center gap-1.5">
-              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
-              <span>Ripristina da File JSON</span>
-            </button>
-          </div>
-
+          <input type="file" id="json-file-input" accept=".json" class="hidden" onchange="app.handleJsonBackupImport(event)">
+          <button onclick="document.getElementById('json-file-input').click()" class="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm transition-all text-center flex items-center justify-center gap-2 cursor-pointer" title="Carica file di backup JSON">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>Ripristina</span>
+          </button>
         </div>
-
       </div>
 
-      <!-- 3. Gestione Memoria Locale (IndexedDB) & Reset -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+      <!-- 3. Archiviazione Locale & Reset Riorganizzato -->
+      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
           <i data-lucide="hard-drive" class="w-4 h-4 text-slate-500"></i>
-          <span>Archiviazione Locale (IndexedDB)</span>
+          <span>Archiviazione Locale</span>
         </h3>
         
-        <div class="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl">
-          <div>
-            <span class="font-semibold block text-slate-800 dark:text-slate-200">Stato Database Locale</span>
-            <span class="text-slate-500 dark:text-slate-400">IndexedDB attivo e persistente</span>
-          </div>
-          <div id="storage-usage-badge" class="font-mono text-xs bg-slate-200 dark:bg-slate-700 px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 font-semibold">
+        <div class="flex items-center gap-3">
+          <div id="storage-usage-badge" class="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-3.5 py-2.5 rounded-xl text-slate-700 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 shrink-0">
             0 note archiviate
           </div>
-        </div>
-
-        <div class="pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <p class="text-xs text-red-500">Attenzione: l'eliminazione dei dati cancellerà tutte le note salvate sul browser.</p>
-          <button onclick="app.confirmResetDatabase()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-xl text-xs font-bold transition-all">
-            Cancella Tutte le Note
+          <button onclick="app.confirmResetDatabase()" class="flex-1 py-2.5 px-3.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-xl text-xs font-bold transition-all text-center cursor-pointer">
+            Cancella tutte le note
           </button>
         </div>
 
+        <p class="text-[11px] text-red-500 font-medium">Attenzione: l'eliminazione cancellerà tutte le note salvate localmente.</p>
       </div>
 
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.16</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.17</span>
         </p>
       </div>
 
@@ -767,20 +758,20 @@
         <span class="text-[10px] font-medium">Calendario</span>
       </button>
 
-      <!-- TASTO CENTRALE '+' PROMINENTE CON SUPPORTO REGISTRAZIONE VOCALE A PRESSIONE PROLUNGATA (3s) -->
-      <div class="relative -top-5 flex items-center justify-center">
-        <!-- SVG Progress Ring per pressione prolungata -->
-        <svg id="fab-progress-ring" class="absolute w-16 h-16 -rotate-90 pointer-events-none hidden z-10" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r="28" fill="none" stroke="#ef4444" stroke-width="4" stroke-dasharray="176" stroke-dashoffset="176" id="fab-progress-circle" />
+      <!-- TASTO CENTRALE '+' INGRANDITO DEL 40% CON SUPPORTO REGISTRAZIONE VOCALE (1.5s) -->
+      <div id="fab-container" class="relative -top-7 flex items-center justify-center">
+        <!-- SVG Progress Ring per pressione prolungata (adattato alla nuova dimensione) -->
+        <svg id="fab-progress-ring" class="absolute w-[88px] h-[88px] -rotate-90 pointer-events-none hidden z-10" viewBox="0 0 88 88">
+          <circle cx="44" cy="44" r="40" fill="none" stroke="#ef4444" stroke-width="4.5" stroke-dasharray="251" stroke-dashoffset="251" id="fab-progress-circle" />
         </svg>
 
         <button 
           id="main-fab-btn" 
-          class="fab-btn w-13 h-13 p-3.5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 select-none relative z-20 transition-all"
-          title="Tocca per nuova nota, tieni premuto 3 secondi per registrare la voce"
+          class="fab-btn w-[76px] h-[76px] rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xl shadow-blue-500/35 select-none relative z-20 transition-all active:scale-95 cursor-pointer"
+          title="Tocca per nuova nota, tieni premuto 1.5 secondi per registrare la voce"
         >
-          <i data-lucide="plus" id="fab-icon-plus" class="w-6 h-6 stroke-[2.8]"></i>
-          <i data-lucide="square" id="fab-icon-stop" class="w-5 h-5 fill-current hidden text-white"></i>
+          <i data-lucide="plus" id="fab-icon-plus" class="w-8 h-8 stroke-[3]"></i>
+          <i data-lucide="square" id="fab-icon-stop" class="w-7 h-7 fill-current hidden text-white"></i>
         </button>
       </div>
 
@@ -951,6 +942,42 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ================= MODALE SBLOCCO NOTA PROTETTA DA PIN ================= -->
+  <div id="note-pin-modal" class="fixed inset-0 z-50 bg-black/75 modal-backdrop hidden flex items-center justify-center p-4">
+    <div id="note-pin-card" class="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center text-center space-y-4 scale-in">
+      <div class="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner">
+        <i data-lucide="lock" class="w-6 h-6"></i>
+      </div>
+      
+      <div>
+        <h3 class="font-bold text-base text-slate-900 dark:text-white">Nota Protetta</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Inserisci il PIN per visualizzare la nota</p>
+      </div>
+
+      <div class="w-full">
+        <input 
+          type="password" 
+          id="note-pin-input" 
+          maxlength="8" 
+          inputmode="numeric" 
+          pattern="[0-9]*" 
+          placeholder="••••" 
+          class="w-full py-3 text-center text-2xl tracking-[0.5em] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-2xl border-2 border-transparent focus:border-amber-500 focus:outline-none transition-all"
+        />
+        <p id="note-pin-error" class="hidden text-xs font-semibold text-red-500 mt-2">PIN non corretto. Riprova.</p>
+      </div>
+
+      <div class="flex items-center gap-2 w-full pt-1">
+        <button type="button" onclick="app.closeNotePinModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer">
+          Annulla
+        </button>
+        <button type="button" onclick="app.verifyNotePin()" class="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/30 transition-all cursor-pointer">
+          Sblocca
+        </button>
+      </div>
     </div>
   </div>
 

@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.16';
+const APP_VERSION = '2.17';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -745,6 +745,10 @@ class AppController {
 
     // Toast Timer
     this.toastTimer = null;
+
+    // PIN Protection State per singole note
+    this.pendingUnlockNoteId = null;
+    this.pendingUnlockAction = null; // 'open_editor', 'toggle_lock', 'export_pdf'
   }
 
   async init() {
@@ -1061,7 +1065,7 @@ class AppController {
         if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
         if (animInterval) { clearInterval(animInterval); animInterval = null; }
         if (progressRing) progressRing.classList.add('hidden');
-        if (progressCircle) progressCircle.style.strokeDashoffset = '176';
+        if (progressCircle) progressCircle.style.strokeDashoffset = '251';
       };
 
       const startHold = (e) => {
@@ -1074,19 +1078,19 @@ class AppController {
         startY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
 
         let elapsed = 0;
-        const total = 2000; // Circa 2 secondi di pressione
-        const step = 30;
+        const total = 1500; // 1.5 secondi di pressione continuata
+        const step = 25;
 
         if (progressRing && progressCircle) {
           progressRing.classList.remove('hidden');
-          progressCircle.style.strokeDashoffset = '176';
+          progressCircle.style.strokeDashoffset = '251';
         }
 
         animInterval = setInterval(() => {
           elapsed += step;
           const pct = Math.min(elapsed / total, 1);
           if (progressCircle) {
-            progressCircle.style.strokeDashoffset = (176 - 176 * pct).toString();
+            progressCircle.style.strokeDashoffset = (251 - 251 * pct).toString();
           }
         }, step);
 
@@ -1098,7 +1102,7 @@ class AppController {
           
           // Feedback aptico (vibrazione)
           if (navigator.vibrate) {
-            try { navigator.vibrate([100, 40, 100]); } catch (vErr) {}
+            try { navigator.vibrate([80, 40, 80]); } catch (vErr) {}
           }
           
           // Avvia registrazione vocale mentre il tasto è ancora premuto
@@ -1124,34 +1128,31 @@ class AppController {
 
       // Pointer Down / Touch Start
       btn.addEventListener('pointerdown', (e) => {
+        try { if (e.pointerId !== undefined) btn.setPointerCapture(e.pointerId); } catch (err) {}
         startHold(e);
       });
 
-      // Pointer Move (se trascina oltre una soglia, annulla il timer)
+      // Pointer Move (tolleranza aumentata a 60px)
       btn.addEventListener('pointermove', (e) => {
         if (!pressTimer) return;
         const curX = e.clientX || 0;
         const curY = e.clientY || 0;
-        if (Math.hypot(curX - startX, curY - startY) > 30) {
+        if (Math.hypot(curX - startX, curY - startY) > 60) {
           cleanupHold();
         }
       });
 
       // Pointer Up / Cancel / Touch End (Rilascio tasto)
-      btn.addEventListener('pointerup', () => {
+      btn.addEventListener('pointerup', (e) => {
+        try { if (e.pointerId !== undefined) btn.releasePointerCapture(e.pointerId); } catch (err) {}
         handleRelease();
       });
-      btn.addEventListener('pointercancel', () => {
+      btn.addEventListener('pointercancel', (e) => {
+        try { if (e.pointerId !== undefined) btn.releasePointerCapture(e.pointerId); } catch (err) {}
         handleRelease();
-      });
-      btn.addEventListener('pointerleave', () => {
-        // Se esce dal pulsante mentre sta tenendo premuto durante la registrazione, ferma la registrazione
-        if (isRecordingTriggered && this.isRecording && this.isLongPressRecording) {
-          handleRelease();
-        }
       });
 
-      // Click Event (per tocco rapido normale < 2 secondi)
+      // Click Event (per tocco rapido normale < 1.5 secondi)
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -1294,10 +1295,9 @@ class AppController {
       this.isRecording = true;
       this.recordingStartTime = Date.now();
 
-      // Suono acustico di avvio registrazione
-      this.playRecordingSound('start');
+      // Suono acustico di avvio registrazione rimosso come richiesto
 
-      // UI: trasforma il pulsante in STOP rosso e mostra il banner
+      // UI: nasconde il pulsante tondo in basso e mostra il banner centrale
       this.updateRecordingUI(true);
 
       // Aggiorna istruzione banner a seconda della modalità
@@ -1363,15 +1363,21 @@ class AppController {
   }
 
   updateRecordingUI(isRec) {
+    const fabContainer = document.getElementById('fab-container');
     const fabBtn = document.getElementById('main-fab-btn');
     const fabPlus = document.getElementById('fab-icon-plus');
     const fabStop = document.getElementById('fab-icon-stop');
+    const desktopBtn = document.getElementById('desktop-add-btn');
     const desktopPlus = document.getElementById('desktop-add-icon-plus');
     const desktopStop = document.getElementById('desktop-add-icon-stop');
     const desktopText = document.getElementById('desktop-add-text');
     const banner = document.getElementById('voice-recording-banner');
 
     if (isRec) {
+      // Quando parte o si riprende la registrazione, fai sparire il tasto tondo in basso
+      fabContainer?.classList.add('opacity-0', 'pointer-events-none');
+      desktopBtn?.classList.add('opacity-0', 'pointer-events-none');
+
       fabBtn?.classList.add('recording-pulse');
       fabPlus?.classList.add('hidden');
       fabStop?.classList.remove('hidden');
@@ -1382,6 +1388,10 @@ class AppController {
 
       banner?.classList.remove('hidden');
     } else {
+      // Ripristina la visibilità dei tasti
+      fabContainer?.classList.remove('opacity-0', 'pointer-events-none');
+      desktopBtn?.classList.remove('opacity-0', 'pointer-events-none');
+
       fabBtn?.classList.remove('recording-pulse');
       fabPlus?.classList.remove('hidden');
       fabStop?.classList.add('hidden');
@@ -2116,8 +2126,17 @@ ISTRUZIONI PER LA RISPOSTA:
       const hasPhotos = Array.isArray(note.photos) && note.photos.length > 0;
       const photosCount = hasPhotos ? note.photos.length : 0;
 
-      // Snippet del contenuto
+      // Snippet del contenuto e stato di blocco
+      const isLocked = !!note.locked;
       const previewText = (note.content || '').replace(/\n+/g, ' ').trim() || 'Nessun testo';
+
+      // Badge Protezione Password
+      const lockBadgeHtml = isLocked
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60 shadow-sm" title="Nota protetta da password">
+             <i data-lucide="lock" class="w-3 h-3 text-amber-600 dark:text-amber-400"></i>
+             <span>Protetta</span>
+           </span>`
+        : '';
 
       // Badge Foto
       const photoBadgeHtml = hasPhotos 
@@ -2159,19 +2178,33 @@ ISTRUZIONI PER LA RISPOSTA:
            </span>`
         : '';
 
-      // Prima miniatura foto (se presente)
-      const thumbnailHtml = (hasPhotos && note.photos[0])
-        ? `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-inner relative group" onclick="event.stopPropagation(); app.openImageViewer('${note.photos[0]}')">
-             <img src="${note.photos[0]}" alt="Foto Nota" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
-             ${photosCount > 1 ? `<span class="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">+${photosCount - 1}</span>` : ''}
+      // Anteprima contenuto: mascherata se la nota è protetta da password
+      const contentPreviewHtml = isLocked
+        ? `<div class="mt-1.5 py-1.5 px-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50 flex items-center gap-2 text-xs font-semibold select-none">
+             <i data-lucide="shield-check" class="w-4 h-4 text-amber-500 shrink-0"></i>
+             <span>Contenuto protetto da password</span>
            </div>`
+        : `<p class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-3 leading-relaxed">${escapeHtml(previewText)}</p>`;
+
+      // Prima miniatura foto (se presente e non bloccata)
+      const thumbnailHtml = (hasPhotos && note.photos[0])
+        ? (isLocked 
+            ? `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-amber-50/80 dark:bg-slate-800 shrink-0 border border-amber-200 dark:border-slate-700 flex flex-col items-center justify-center text-amber-600 dark:text-amber-400 shadow-inner">
+                 <i data-lucide="lock" class="w-5 h-5"></i>
+                 <span class="text-[9px] font-bold mt-0.5">${photosCount} foto</span>
+               </div>`
+            : `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700 cursor-pointer shadow-inner relative group" onclick="event.stopPropagation(); app.openImageViewer('${note.photos[0]}')">
+                 <img src="${note.photos[0]}" alt="Foto Nota" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
+                 ${photosCount > 1 ? `<span class="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">+${photosCount - 1}</span>` : ''}
+               </div>`
+          )
         : '';
 
       const safeId = String(note.id || '').replace(/'/g, "\\'");
 
       return `
         <article 
-          onclick="app.openEditor('${safeId}')"
+          onclick="app.openNoteOrPromptPin('${safeId}')"
           class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
         >
           <div>
@@ -2182,6 +2215,7 @@ ISTRUZIONI PER LA RISPOSTA:
                 <span>${formattedDate}</span>
               </span>
               <div class="flex items-center gap-1 flex-wrap">
+                ${lockBadgeHtml}
                 ${audioBadgeHtml}
                 ${photoBadgeHtml}
                 ${weatherBadgeHtml}
@@ -2194,9 +2228,7 @@ ISTRUZIONI PER LA RISPOSTA:
                 <h3 class="font-bold text-base text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-snug line-clamp-2">
                   ${escapeHtml(note.title || 'Senza Titolo')}
                 </h3>
-                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-3 leading-relaxed">
-                  ${escapeHtml(previewText)}
-                </p>
+                ${contentPreviewHtml}
               </div>
               ${thumbnailHtml}
             </div>
@@ -2204,23 +2236,44 @@ ISTRUZIONI PER LA RISPOSTA:
 
           <!-- Footer Card: Metadati e Azioni Veloci -->
           <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
-            <div class="flex items-center gap-1.5 flex-wrap max-w-[70%]">
+            <div class="flex items-center gap-1.5 flex-wrap max-w-[55%] sm:max-w-[65%]">
               ${locationBadgeHtml}
               ${folderBadgeHtml}
             </div>
 
             <div class="flex items-center gap-1 shrink-0">
+              <!-- 1. Tasto Condividi -->
               <button 
                 onclick="event.stopPropagation(); app.shareNote('${safeId}')" 
-                class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors" 
+                class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
                 title="Copia / Condividi testo"
               >
                 <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
               </button>
+
+              <!-- 2. Tasto PDF (Esporta nota e foto in PDF) -->
+              <button 
+                onclick="event.stopPropagation(); app.exportNoteToPdf('${safeId}')" 
+                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
+                title="Esporta nota in PDF"
+              >
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-red-500"></i>
+              </button>
+
+              <!-- 3. Tasto Chiave/Lucchetto (Protezione Password 1804) -->
+              <button 
+                onclick="event.stopPropagation(); app.toggleNoteLock('${safeId}')" 
+                class="p-1.5 rounded-lg ${isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40' : 'text-slate-400'} hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
+                title="${isLocked ? 'Rimuovi protezione password' : 'Proteggi nota con password'}"
+              >
+                <i data-lucide="${isLocked ? 'lock' : 'key'}" class="w-3.5 h-3.5"></i>
+              </button>
+
+              <!-- 4. Tasto Elimina -->
               <button 
                 onclick="event.stopPropagation(); app.confirmDeleteNote('${safeId}')" 
-                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors" 
-                title="Elimina"
+                class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
+                title="Elimina nota"
               >
                 <i data-lucide="trash" class="w-3.5 h-3.5"></i>
               </button>
@@ -2251,6 +2304,206 @@ ISTRUZIONI PER LA RISPOSTA:
     }
 
     if (window.lucide) lucide.createIcons();
+  }
+
+  // --- ESPORTAZIONE PDF SINGOLA NOTA & FOTO ---
+  exportNoteToPdf(noteId) {
+    const note = this.notes.find(n => n && String(n.id) === String(noteId));
+    if (!note) {
+      this.showToast('Nota non trovata', 'error');
+      return;
+    }
+
+    if (note.locked) {
+      this.pendingUnlockNoteId = noteId;
+      this.pendingUnlockAction = 'export_pdf';
+      this.openNotePinModal();
+      return;
+    }
+
+    this._generateAndPrintPdf(note);
+  }
+
+  _generateAndPrintPdf(note) {
+    let dateObj = parseDateSafe(note.date);
+    const dateFormatted = formatFullItalianDate(dateObj) || formatItalianDate(dateObj);
+    const title = escapeHtml(note.title || 'Senza Titolo');
+    const folder = note.folder ? `<span style="background:#e0e7ff;color:#3730a3;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">📁 ${escapeHtml(note.folder)}</span>` : '';
+    const location = note.location ? `<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">📍 ${escapeHtml(note.location)}</span>` : '';
+    const weather = note.weather ? `<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">☀️ ${escapeHtml(note.weather)}</span>` : '';
+
+    let photosHtml = '';
+    if (Array.isArray(note.photos) && note.photos.length > 0) {
+      photosHtml = `
+        <div style="margin-top:28px;border-top:2px dashed #cbd5e1;padding-top:20px;page-break-inside:avoid;">
+          <h4 style="font-size:14px;font-weight:800;color:#334155;margin-bottom:14px;text-transform:uppercase;letter-spacing:0.5px;">Fotografie Allegate (${note.photos.length})</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:14px;">
+            ${note.photos.map((p, idx) => `<div style="border-radius:12px;overflow:hidden;border:1px solid #cbd5e1;background:#f8fafc;"><img src="${p}" style="width:100%;height:180px;object-fit:cover;display:block;" alt="Foto ${idx+1}"></div>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const doc = printFrame.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${title} - MassiNote</title>
+          <style>
+            @page { size: A4; margin: 18mm 15mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.65; margin: 0; padding: 24px; }
+            .header { border-bottom: 2.5px solid #2563eb; padding-bottom: 14px; margin-bottom: 22px; }
+            .app-title { font-size: 11px; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 1.5px; }
+            .note-title { font-size: 24px; font-weight: 800; color: #0f172a; margin: 6px 0 10px 0; line-height: 1.25; }
+            .meta { font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 10px; }
+            .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+            .content { font-size: 14.5px; color: #334155; white-space: pre-wrap; word-break: break-word; background: #f8fafc; padding: 18px; border-radius: 14px; border: 1px solid #e2e8f0; line-height: 1.7; }
+            @media print {
+              body { padding: 0; }
+              .content { background: transparent; border: none; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="app-title">MassiNote • Documento di Nota</div>
+            <h1 class="note-title">${title}</h1>
+            <div class="meta">📅 ${dateFormatted}</div>
+            <div class="badges">
+              ${folder} ${location} ${weather}
+            </div>
+          </div>
+          <div class="content">${escapeHtml(note.content || 'Nessun testo')}</div>
+          ${photosHtml}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      printFrame.contentWindow.focus();
+      printFrame.contentWindow.print();
+      setTimeout(() => {
+        if (printFrame.parentNode) {
+          document.body.removeChild(printFrame);
+        }
+      }, 2000);
+    }, 500);
+
+    this.showToast('Esportazione PDF avviata...', 'info');
+  }
+
+  // --- GESTIONE BLOCCO PASSWORD (PIN 1804) PER SINGOLE NOTE ---
+  toggleNoteLock(noteId) {
+    const note = this.notes.find(n => n && String(n.id) === String(noteId));
+    if (!note) return;
+
+    if (note.locked) {
+      // Se è già protetta, richiedi il PIN prima di rimuovere la protezione
+      this.pendingUnlockNoteId = noteId;
+      this.pendingUnlockAction = 'toggle_lock';
+      this.openNotePinModal();
+    } else {
+      // Attiva protezione
+      note.locked = true;
+      note.updatedAt = new Date().toISOString();
+      this.db.put(note);
+      this.firebase.saveNote(note).catch(() => {});
+      this.render();
+      this.renderStats();
+      this.showToast('Nota protetta con password!', 'success');
+    }
+  }
+
+  openNoteOrPromptPin(noteId) {
+    const note = this.notes.find(n => n && String(n.id) === String(noteId));
+    if (!note) return;
+
+    if (note.locked) {
+      this.pendingUnlockNoteId = noteId;
+      this.pendingUnlockAction = 'open_editor';
+      this.openNotePinModal();
+    } else {
+      this.openEditor(noteId);
+    }
+  }
+
+  openNotePinModal() {
+    const modal = document.getElementById('note-pin-modal');
+    const input = document.getElementById('note-pin-input');
+    const errorEl = document.getElementById('note-pin-error');
+    if (errorEl) errorEl.classList.add('hidden');
+    if (input) input.value = '';
+    modal?.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+    setTimeout(() => input?.focus(), 250);
+  }
+
+  closeNotePinModal() {
+    const modal = document.getElementById('note-pin-modal');
+    const input = document.getElementById('note-pin-input');
+    if (input) input.value = '';
+    this.pendingUnlockNoteId = null;
+    this.pendingUnlockAction = null;
+    modal?.classList.add('hidden');
+  }
+
+  async verifyNotePin() {
+    const input = document.getElementById('note-pin-input');
+    const errorEl = document.getElementById('note-pin-error');
+    const cardEl = document.getElementById('note-pin-card');
+    if (!input) return;
+
+    const val = input.value.trim();
+    if (!val) return;
+
+    const enteredHash = await calculateSha256(val);
+    if (enteredHash === _0xSEC_PIN_HASH) {
+      const targetId = this.pendingUnlockNoteId;
+      const action = this.pendingUnlockAction;
+      this.closeNotePinModal();
+
+      if (action === 'toggle_lock') {
+        const note = this.notes.find(n => n && String(n.id) === String(targetId));
+        if (note) {
+          note.locked = false;
+          note.updatedAt = new Date().toISOString();
+          await this.db.put(note);
+          this.firebase.saveNote(note).catch(() => {});
+          this.render();
+          this.renderStats();
+          this.showToast('Protezione rimossa dalla nota', 'info');
+        }
+      } else if (action === 'export_pdf') {
+        const note = this.notes.find(n => n && String(n.id) === String(targetId));
+        if (note) this._generateAndPrintPdf(note);
+      } else {
+        this.openEditor(targetId);
+      }
+    } else {
+      if (errorEl) errorEl.classList.remove('hidden');
+      if (cardEl) {
+        cardEl.classList.remove('shake');
+        void cardEl.offsetWidth;
+        cardEl.classList.add('shake');
+      }
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+    }
   }
 
   // --- CALENDARIO MENSILE ---
@@ -2495,7 +2748,13 @@ ISTRUZIONI PER LA RISPOSTA:
   // --- STATISTICHE ---
   renderStats() {
     const totalNotes = this.notes.length;
-    const withPhotos = this.notes.filter(n => n.photos && n.photos.length > 0).length;
+    const protectedNotes = this.notes.filter(n => n && n.locked).length;
+    const pctProtected = totalNotes > 0 ? Math.round((protectedNotes / totalNotes) * 100) : 0;
+
+    const audioNotes = this.notes.filter(n => n && (n.audio || (Array.isArray(n.tags) && (n.tags.includes('audio') || n.tags.includes('ia'))))).length;
+    const pctAudio = totalNotes > 0 ? Math.round((audioNotes / totalNotes) * 100) : 0;
+
+    const withPhotos = this.notes.filter(n => n && n.photos && n.photos.length > 0).length;
     const pctPhotos = totalNotes > 0 ? Math.round((withPhotos / totalNotes) * 100) : 0;
 
     // Conteggio parole e raggruppamenti
@@ -2507,6 +2766,7 @@ ISTRUZIONI PER LA RISPOSTA:
     let tempCount = 0;
 
     for (const n of this.notes) {
+      if (!n) continue;
       const text = `${n.title || ''} ${n.content || ''}`.trim();
       const words = text ? text.split(/\s+/).length : 0;
       totalWords += words;
@@ -2548,6 +2808,18 @@ ISTRUZIONI PER LA RISPOSTA:
     // Aggiorna KPI DOM Principali
     const totalNotesEl = document.getElementById('stat-total-notes');
     if (totalNotesEl) totalNotesEl.textContent = totalNotes;
+
+    const protectedNotesEl = document.getElementById('stat-protected-notes');
+    if (protectedNotesEl) protectedNotesEl.textContent = protectedNotes;
+
+    const protectedPctEl = document.getElementById('stat-protected-pct');
+    if (protectedPctEl) protectedPctEl.textContent = `${pctProtected}% delle note`;
+
+    const audioNotesEl = document.getElementById('stat-audio-notes');
+    if (audioNotesEl) audioNotesEl.textContent = audioNotes;
+
+    const audioPctEl = document.getElementById('stat-audio-pct');
+    if (audioPctEl) audioPctEl.textContent = `${pctAudio}% del totale`;
 
     const photosNotesEl = document.getElementById('stat-photos-notes');
     if (photosNotesEl) photosNotesEl.textContent = withPhotos;
@@ -3603,6 +3875,7 @@ ISTRUZIONI PER LA RISPOSTA:
         this.closeConfirmModal();
         this.cancelVoiceRecording();
         this.closeAiSearchModal();
+        this.closeNotePinModal();
       }
       // Ctrl+S o Cmd+S salva la nota se l'editor è aperto
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -3614,7 +3887,23 @@ ISTRUZIONI PER LA RISPOSTA:
       }
     });
 
-    // 3. Listener Invio su barra di ricerca
+    // 3. Listener per input PIN nota protetta
+    const notePinInput = document.getElementById('note-pin-input');
+    if (notePinInput) {
+      notePinInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.verifyNotePin();
+        }
+      });
+      notePinInput.addEventListener('input', () => {
+        if (notePinInput.value.length >= 4) {
+          this.verifyNotePin();
+        }
+      });
+    }
+
+    // 4. Listener Invio su barra di ricerca
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
       searchInput.addEventListener('keydown', (e) => {
