@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.21';
+const APP_VERSION = '2.22';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -264,25 +264,37 @@ class FirebaseStorageManager {
         }
       }
 
-      // Autenticazione anonima automatica
+      // Autenticazione anonima automatica con timeout di sicurezza
       await new Promise((resolve) => {
-        this.auth.onAuthStateChanged(async (user) => {
+        let isDone = false;
+        const safeResolve = (u) => {
+          if (!isDone) {
+            isDone = true;
+            resolve(u);
+          }
+        };
+
+        const unsubscribe = this.auth.onAuthStateChanged(async (user) => {
+          try { unsubscribe(); } catch (_) {}
+
           if (user) {
             this.userId = user.uid;
             this.isOnline = true;
-            resolve(user);
+            safeResolve(user);
           } else {
             try {
               const cred = await this.auth.signInAnonymously();
               this.userId = cred.user.uid;
               this.isOnline = true;
-              resolve(cred.user);
+              safeResolve(cred.user);
             } catch (authErr) {
               console.warn('Errore autenticazione anonima Firebase:', authErr);
-              resolve(null);
+              safeResolve(null);
             }
           }
         });
+
+        setTimeout(() => safeResolve(null), 3000);
       });
 
       return true;
@@ -302,24 +314,29 @@ class FirebaseStorageManager {
     if (!col) return () => {};
 
     if (this.unsubscribeListener) {
-      this.unsubscribeListener();
+      try { this.unsubscribeListener(); } catch (_) {}
     }
 
-    this.unsubscribeListener = col.onSnapshot(
-      (snapshot) => {
-        const notes = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          notes.push({ id: doc.id, ...data });
-        });
-        notes.sort((a, b) => new Date(b.date) - new Date(a.date));
-        if (onUpdate) onUpdate(notes);
-      },
-      (error) => {
-        console.warn('Errore snapshot Firestore:', error);
-        if (onError) onError(error);
-      }
-    );
+    try {
+      this.unsubscribeListener = col.onSnapshot(
+        (snapshot) => {
+          const notes = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            notes.push({ id: doc.id, ...data });
+          });
+          notes.sort((a, b) => new Date(b.date) - new Date(a.date));
+          if (onUpdate) onUpdate(notes);
+        },
+        (error) => {
+          console.warn('Errore snapshot Firestore:', error);
+          if (onError) onError(error);
+        }
+      );
+    } catch (err) {
+      console.warn('Errore apertura sottoscrizione Firestore:', err);
+      if (onError) onError(err);
+    }
 
     return this.unsubscribeListener;
   }
@@ -492,9 +509,7 @@ class NoteDatabase {
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAll();
         request.onsuccess = () => {
-          const res = request.result || [];
-          try { this._saveFallbackNotes(res); } catch (_) {}
-          resolve(res);
+          resolve(request.result || []);
         };
         request.onerror = () => {
           console.warn('Errore getAll IndexedDB, fallback su LocalStorage:', request.error);
@@ -536,11 +551,10 @@ class NoteDatabase {
     if (!note || !note.id) return null;
     if (!this.db && !this.useFallback) await this.init();
 
-    const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(note.id));
-    fallbackNotes.push(note);
-    this._saveFallbackNotes(fallbackNotes);
-
     if (this.useFallback || !this.db) {
+      const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(note.id));
+      fallbackNotes.push(note);
+      this._saveFallbackNotes(fallbackNotes);
       return note.id;
     }
 
@@ -551,30 +565,29 @@ class NoteDatabase {
         const request = store.put(note);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => {
-          console.warn('Avviso put IndexedDB, salvato nel fallback:', request.error);
+          console.warn('Avviso put IndexedDB:', request.error);
           resolve(note.id);
         };
       } catch (err) {
-        console.warn('Eccezione put IndexedDB, salvato nel fallback:', err);
+        console.warn('Eccezione put IndexedDB:', err);
         resolve(note.id);
       }
     });
   }
 
   async putBatch(notes) {
-    if (!Array.isArray(notes)) return 0;
+    if (!Array.isArray(notes) || notes.length === 0) return 0;
     if (!this.db && !this.useFallback) await this.init();
 
-    const idMap = new Map();
-    for (const n of this._getFallbackNotes()) {
-      if (n && n.id) idMap.set(String(n.id), n);
-    }
-    for (const n of notes) {
-      if (n && n.id) idMap.set(String(n.id), n);
-    }
-    this._saveFallbackNotes(Array.from(idMap.values()));
-
     if (this.useFallback || !this.db) {
+      const idMap = new Map();
+      for (const n of this._getFallbackNotes()) {
+        if (n && n.id) idMap.set(String(n.id), n);
+      }
+      for (const n of notes) {
+        if (n && n.id) idMap.set(String(n.id), n);
+      }
+      this._saveFallbackNotes(Array.from(idMap.values()));
       return notes.length;
     }
 
@@ -603,10 +616,9 @@ class NoteDatabase {
   async delete(id) {
     if (!this.db && !this.useFallback) await this.init();
 
-    const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(id));
-    this._saveFallbackNotes(fallbackNotes);
-
     if (this.useFallback || !this.db) {
+      const fallbackNotes = this._getFallbackNotes().filter(n => String(n.id) !== String(id));
+      this._saveFallbackNotes(fallbackNotes);
       return true;
     }
 
@@ -624,8 +636,8 @@ class NoteDatabase {
   }
 
   async clear() {
-    this._saveFallbackNotes([]);
     if (this.useFallback || !this.db) {
+      this._saveFallbackNotes([]);
       return true;
     }
 
@@ -910,16 +922,20 @@ class AppController {
       const fbOnline = await this.firebase.init();
 
       if (fbOnline) {
-        this.setCloudStatus('online', 'Cloud Sync Attivo');
-        
         // Sottoscrizione alle modifiche in tempo reale da Firestore con unione intelligente
         this.firebase.subscribeNotes(
           async (cloudNotes) => {
-            if (cloudNotes && cloudNotes.length > 0) {
-              await this.mergeCloudNotes(cloudNotes);
+            try {
+              if (cloudNotes && cloudNotes.length > 0) {
+                await this.mergeCloudNotes(cloudNotes);
+              } else if (this.notes.length > 0) {
+                this.firebase.saveBatch(this.notes).catch(e => console.warn('Sync initial batch warning:', e));
+              }
+            } catch (mergeErr) {
+              console.warn('Avviso merge cloud notes:', mergeErr);
+            } finally {
               this.setCloudStatus('online', 'Sincronizzato');
-            } else if (this.notes.length > 0) {
-              this.firebase.saveBatch(this.notes).catch(e => console.warn('Sync initial batch warning:', e));
+              this.render();
             }
           },
           (err) => {
