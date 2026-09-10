@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.28)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.29)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.28), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.29), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -43,10 +43,10 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - Architettura a Doppio Livello:
   - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`) ad alte prestazioni.
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
-- Funzione Stella "Da Lavorare" (In cima alla lista):
-  - Tasto Stella nella card nota accanto al tasto Condividi e nell'Editor accanto/sopra al contatore parole.
-  - Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in giallo/ambra e la nota viene posta con priorità assoluta **in cima alla lista**.
-  - Disattivando la stella, la nota torna all'ordinamento cronologico naturale per data.
+- Funzione Stella "Da Lavorare" (In cima alla lista & Filtro Dedicato):
+  - **Barra Superiore**: Tasto Filtro Stella accanto al tasto AI nella barra di ricerca. Cliccandolo, filtra istantaneamente l'elenco mostrando solo le note con la stella attiva.
+  - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in giallo/ambra e la nota viene posta con priorità assoluta in cima alla lista.
+  - **Editor Nota**: Tasto Stella posizionato nella toolbar di formattazione.
 - Rendering Non-Bloccante & Sincronizzazione Cloud:
   - All'arrivo dello snapshot da Firestore, l'unione e il rendering visivo a schermo (`render()`) avvengono istantaneamente in memoria, passando allo stato "Sincronizzato".
 
@@ -59,7 +59,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   "Sei un assistente personale intelligente per la gestione degli appunti in italiano. Ascolta attentamente questo file audio registrato dall'utente. Devi generare un JSON valido con: 'title' (titolo conciso max 7-8 parole) e 'summary' (riassunto ordinato e completo scritto come se fosse una nota redatta a mano in italiano)."
 - Divieto Sintassi Markdown & Sanitizzazione Automatica:
   - Funzione `cleanAiFormatting(text)`: converte gli elenchi in pallini Unicode `• `, rimuove cancelletti e asterischi di formattazione.
-- Ricerca Generativa Intelligente RAG sulle Note (Tasto "AI"):
+- Ricerca Generativa Intelligente RAG sulle Note (Tasto "AI" accanto alla ricerca):
   - Risponde in italiano pulito formulando risposte contestualizzate alle note salvate.
 
 ======================================================================
@@ -92,8 +92,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 ======================================================================
 L'app dispone di 5 viste principali:
 1. **VISTA NOTE (`#view-notes`)**:
-   - Layout allargato a `max-w-6xl` allineato all'header.
-   - Barra di ricerca con filtri "Tutte", "Con Foto", "AI".
+   - Layout a riga unica per la barra di ricerca: Campo di input + Tasto "AI" + Tasto "Filtro Stella".
    - Card note con badge (Stella Da Lavorare, Protetta, Vocale, Foto, Meteo, Luogo, Cartella) e pulsanti rapidi (Condividi, Stella, PDF, Chiave, Cestino).
 2. **VISTA CALENDARIO (`#view-calendar`)**: Griglia mensile completa e visualizzatore note del giorno.
 3. **VISTA STATISTICHE (`#view-stats`)**:
@@ -104,7 +103,7 @@ L'app dispone di 5 viste principali:
    - Tema chiaro/scuro.
    - Box compatto "Backup & Ripristino Dati" (tasti affiancati Backup e Ripristina).
    - Box "Archiviazione Locale".
-   - Footer: "MassiNote WebApp • Versione 2.28".
+   - Footer: "MassiNote WebApp • Versione 2.29".
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Header con Chiudi, Data/ora, Microfono (registra e allega), Foto, Salva, Cestino.
    - Toolbar formattazione con: `B` (Grassetto), `-` (Separatore), `Orologio` (Data GG/MM/AA), `Stella` (Da lavorare) e contatore parole.
@@ -113,7 +112,7 @@ L'app dispone di 5 viste principali:
 ======================================================================
 8. REGOLE DI QUALITÀ & VERSIONAMENTO
 ======================================================================
-- Versione attuale: `2.28`.
+- Versione attuale: `2.29`.
 - A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
 - Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
 ```

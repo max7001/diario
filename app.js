@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.28';
+const APP_VERSION = '2.29';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -2279,24 +2279,38 @@ ISTRUZIONI PER LA RISPOSTA:
     this.renderNotesList();
   }
 
+  toggleFilterStarred() {
+    if (this.currentFilter === 'starred') {
+      this.setFilter('all');
+    } else {
+      this.setFilter('starred');
+    }
+  }
+
   setFilter(filterType) {
     this.notesLimit = 30;
     this.currentFilter = filterType;
-    
-    // Aggiorna stile chips
-    ['chip-filter-all', 'chip-filter-photos'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (btn) {
-        btn.className = 'chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1';
-      }
-    });
-
-    const activeBtn = document.getElementById(`chip-filter-${filterType}`);
-    if (activeBtn) {
-      activeBtn.className = 'chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-blue-600 text-white shadow-sm flex items-center gap-1';
-    }
-
+    this.updateFilterStarredUI();
     this.renderNotesList();
+  }
+
+  updateFilterStarredUI() {
+    const btn = document.getElementById('filter-starred-btn');
+    const icon = document.getElementById('filter-starred-icon');
+    if (!btn) return;
+
+    if (this.currentFilter === 'starred') {
+      btn.className = 'p-2 sm:px-3 sm:py-2.5 rounded-xl font-bold transition-all bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm';
+      if (icon) {
+        icon.className = 'w-4 h-4 fill-amber-400 text-amber-500';
+      }
+    } else {
+      btn.className = 'p-2 sm:px-3 sm:py-2.5 rounded-xl font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400 flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm';
+      if (icon) {
+        icon.className = 'w-4 h-4 text-slate-400';
+      }
+    }
+    if (window.lucide) lucide.createIcons();
   }
 
   resetFilters() {
@@ -2317,14 +2331,19 @@ ISTRUZIONI PER LA RISPOSTA:
   getFilteredNotes() {
     let result = [...this.notes];
 
-    // Ordinamento di default: sempre per data più recente in alto (con gestione sicura timestamp)
+    // Ordinamento: note da lavorare (stella) sempre in cima, poi data decrescente
     result.sort((a, b) => {
+      const aStarred = Boolean(a && (a.starred || a.pinned));
+      const bStarred = Boolean(b && (b.starred || b.pinned));
+      if (aStarred !== bStarred) {
+        return aStarred ? -1 : 1;
+      }
       const timeA = a && a.date ? (new Date(a.date).getTime() || 0) : 0;
       const timeB = b && b.date ? (new Date(b.date).getTime() || 0) : 0;
       return timeB - timeA;
     });
 
-    // Filtro Ricerca
+    // Filtro Ricerca Full Text
     if (this.searchQuery) {
       result = result.filter(n => {
         if (!n) return false;
@@ -2341,17 +2360,11 @@ ISTRUZIONI PER LA RISPOSTA:
       });
     }
 
-    // Filtro Chip
-    if (this.currentFilter === 'photos') {
+    // Filtro Stella / Tipo
+    if (this.currentFilter === 'starred') {
+      result = result.filter(n => n && Boolean(n.starred || n.pinned));
+    } else if (this.currentFilter === 'photos') {
       result = result.filter(n => n && Array.isArray(n.photos) && n.photos.length > 0);
-    } else if (this.currentFilter === 'recent') {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      result = result.filter(n => {
-        if (!n || !n.date) return false;
-        const d = new Date(n.date);
-        return !isNaN(d.getTime()) && d >= thirtyDaysAgo;
-      });
     } else if (this.currentFilter.startsWith('day:')) {
       const targetDayStr = this.currentFilter.replace('day:', '');
       result = result.filter(n => {
@@ -2379,14 +2392,6 @@ ISTRUZIONI PER LA RISPOSTA:
 
   updateCounters() {
     const total = this.notes.length;
-    const withPhotos = this.notes.filter(n => n && Array.isArray(n.photos) && n.photos.length > 0).length;
-
-    const countAllEl = document.getElementById('count-all');
-    if (countAllEl) countAllEl.textContent = total;
-
-    const countPhotosEl = document.getElementById('count-photos');
-    if (countPhotosEl) countPhotosEl.textContent = withPhotos;
-
     const headerSub = document.getElementById('header-subtitle');
     if (headerSub) {
       headerSub.textContent = `${total} ${total === 1 ? 'nota salvata' : 'note salvate'}`;
@@ -2409,6 +2414,7 @@ ISTRUZIONI PER LA RISPOSTA:
       filterStatusBar?.classList.remove('hidden');
       let statusDesc = `Filtro: ${filtered.length} ${filtered.length === 1 ? 'risultato trovato' : 'risultati trovati'}`;
       if (this.searchQuery) statusDesc += ` per "${this.searchQuery}"`;
+      if (this.currentFilter === 'starred') statusDesc += ` (solo note contrassegnate con la Stella / Da lavorare)`;
       if (this.currentFilter === 'photos') statusDesc += ` (solo note con foto)`;
       if (this.currentFilter.startsWith('day:')) statusDesc += ` (data: ${this.currentFilter.replace('day:', '')})`;
       if (filterStatusText) filterStatusText.textContent = statusDesc;

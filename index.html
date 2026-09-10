@@ -113,46 +113,48 @@
     <!-- ================= VIEW 1: ELENCO NOTE (HOME) ================= -->
     <section id="view-notes" class="fade-in space-y-4">
       
-      <!-- Search Bar & Filters -->
-      <div class="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+      <!-- Search Bar & Quick Filters (Ricerca + AI + Filtro Stella) -->
+      <div class="bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         
-        <!-- Input Ricerca Full Text -->
-        <div class="relative flex items-center">
-          <i data-lucide="search" class="w-5 h-5 absolute left-3 text-slate-400"></i>
-          <input 
-            type="text" 
-            id="search-input" 
-            placeholder="Cerca per titolo, testo, luogo, meteo..." 
-            class="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 transition-all"
-            oninput="app.onSearchInput(this.value)"
-          >
-          <button id="search-clear-btn" class="hidden absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1" onclick="app.clearSearch()">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-
-        <!-- Chips & Filter Row -->
-        <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-          <!-- Filter Tags -->
-          <div class="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full no-scrollbar">
-            <button onclick="app.setFilter('all')" id="chip-filter-all" class="chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-blue-600 text-white shadow-sm">
-              Tutte (<span id="count-all">0</span>)
-            </button>
-            <button onclick="app.setFilter('photos')" id="chip-filter-photos" class="chip-filter px-3 py-1.5 rounded-lg font-medium transition-all bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1">
-              <i data-lucide="camera" class="w-3.5 h-3.5 text-pink-500"></i>
-              <span>Con Foto (<span id="count-photos">0</span>)</span>
-            </button>
-            <button 
-              type="button" 
-              onclick="app.toggleAiSearchMode()" 
-              id="chip-filter-ai" 
-              class="chip-filter px-3 py-1.5 rounded-lg font-bold transition-all bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 flex items-center gap-1.5 shadow-sm"
-              title="Attiva la ricerca generativa intelligente con Gemini AI"
+        <div class="flex items-center gap-2">
+          <!-- Input Ricerca Full Text -->
+          <div class="relative flex-1 flex items-center min-w-0">
+            <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5 absolute left-3 text-slate-400"></i>
+            <input 
+              type="text" 
+              id="search-input" 
+              placeholder="Cerca per titolo, testo, luogo, meteo..." 
+              class="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 sm:py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 transition-all"
+              oninput="app.onSearchInput(this.value)"
             >
-              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400"></i>
-              <span>AI</span>
+            <button id="search-clear-btn" class="hidden absolute right-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1" onclick="app.clearSearch()">
+              <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
+
+          <!-- Tasto AI (Ricerca Generativa Intelligente con Gemini) -->
+          <button 
+            type="button" 
+            onclick="app.toggleAiSearchMode()" 
+            id="chip-filter-ai" 
+            class="px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl font-bold transition-all bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm"
+            title="Attiva la ricerca generativa intelligente con Gemini AI"
+          >
+            <i data-lucide="sparkles" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+            <span>AI</span>
+          </button>
+
+          <!-- Tasto Filtro Stella (Filtra solo note da lavorare con stella attiva) -->
+          <button 
+            type="button" 
+            onclick="app.toggleFilterStarred()" 
+            id="filter-starred-btn" 
+            class="p-2 sm:px-3 sm:py-2.5 rounded-xl font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400 flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm"
+            title="Filtra solo le note contrassegnate con la Stella (Da Lavorare)"
+          >
+            <i data-lucide="star" id="filter-starred-icon" class="w-4 h-4 text-slate-400"></i>
+            <span class="hidden md:inline">Da lavorare</span>
+          </button>
         </div>
 
       </div>
@@ -529,7 +531,7 @@
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.28</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.29</span>
         </p>
       </div>
 
