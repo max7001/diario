@@ -42,6 +42,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
+  <!-- Leaflet Map CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <!-- Custom Styles -->
   <link rel="stylesheet" href="style.css">
 </head>
@@ -435,6 +439,19 @@
         </div>
       </div>
 
+      <!-- 4. Mappa Geografica delle Note (Mostra tutti i punti dove sono state inserite note) -->
+      <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="map-pin" class="w-4 h-4 text-emerald-600"></i>
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Mappa Geografica delle Note</h3>
+          </div>
+          <span id="stat-map-count-badge" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900/50">0 Punti Mappati</span>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Visualizza tutti i luoghi in cui hai scritto o registrato le tue note.</p>
+        <div id="stats-notes-map" class="w-full h-80 sm:h-96 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner z-0"></div>
+      </div>
+
     </section>
 
     <!-- ================= VIEW 4: IMPOSTAZIONI & BACKUP ================= -->
@@ -488,14 +505,6 @@
             <span>Ripristina</span>
           </button>
         </div>
-
-        <!-- Tasto speciale per Importatore Foto da Backup ZIP / Diaro -->
-        <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
-          <a href="import-foto.html" class="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all text-center flex items-center justify-center gap-2">
-            <i data-lucide="image" class="w-4 h-4"></i>
-            <span>Importa e Abbina Foto da Backup Cloud</span>
-          </a>
-        </div>
       </div>
 
       <!-- 3. Archiviazione Locale & Reset Riorganizzato -->
@@ -520,7 +529,7 @@
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.27</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.28</span>
         </p>
       </div>
 
@@ -594,12 +603,26 @@
           >
         </div>
 
-        <!-- Barra Strumenti Formattazione Rapida (B = Grassetto, - = Linea, Orologio = Data GG/MM/AA) -->
+        <!-- Barra Strumenti Formattazione Rapida (B = Grassetto, - = Linea, Orologio = Data GG/MM/AA, Stella = Da Lavorare) -->
         <div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs overflow-x-auto py-1 border-b border-slate-100 dark:border-slate-800">
           <button type="button" onclick="app.insertEditorFormat('bold')" class="px-2.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded font-bold text-sm text-slate-700 dark:text-slate-200 transition-colors" title="Grassetto (B)">B</button>
           <button type="button" onclick="app.insertEditorFormat('divider')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-700 dark:text-slate-200 transition-colors" title="Inserisci Linea Separatore (-)"><i data-lucide="minus" class="w-4 h-4"></i></button>
           <button type="button" onclick="app.insertEditorFormat('date')" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-700 dark:text-slate-200 transition-colors" title="Inserisci Data Odierna (GG/MM/AA)"><i data-lucide="clock" class="w-4 h-4"></i></button>
-          <span class="text-[11px] ml-auto text-slate-400" id="editor-word-count">0 parole</span>
+          
+          <div class="ml-auto flex items-center gap-2 shrink-0">
+            <!-- Tasto Stella Da Lavorare nell'Editor -->
+            <button 
+              type="button" 
+              id="editor-star-btn" 
+              onclick="app.toggleEditorStarred()" 
+              class="p-1 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1 text-xs font-semibold cursor-pointer" 
+              title="Contrassegna come 'Da lavorare' (in cima alla lista)"
+            >
+              <i data-lucide="star" id="editor-star-icon" class="w-4 h-4 text-slate-400"></i>
+              <span id="editor-star-label" class="hidden sm:inline">Da lavorare</span>
+            </button>
+            <span class="text-[11px] text-slate-400" id="editor-word-count">0 parole</span>
+          </div>
         </div>
 
         <!-- Input Nota (Corpo) -->

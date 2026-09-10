@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.27';
+const APP_VERSION = '2.28';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -82,6 +82,7 @@ function cleanAiFormatting(text) {
 // ================= SICUREZZA & HASH PROTETTO =================
 // Hash crittografico sicuro unidirezionale SHA-256 (nessuna password in chiaro presente nel codice sorgente)
 const _0xSEC_PIN_HASH = 'da28719dfd9c4da81f433d4788c3d0e10d97180018d0e32b65c967c45661597e';
+const _0xSEC_DEVICE_AUTH_HASH = '02f0022d2e5860656c5897cf0a7091c8bc5171fa9df7911db40dba3953d801f6';
 
 function calculateSha256(str) {
   function rightRotate(value, amount) {
@@ -937,8 +938,13 @@ class AppController {
     
     // Editor State
     this.editingNoteId = null;
+    this.editingNoteStarred = false;
     this.editorPhotos = []; // array of base64 strings
     this.editorAudio = null; // base64 audio string
+
+    // Stats Map State
+    this.statsMap = null;
+    this.statsMarkersLayer = null;
 
     // Voice Recording & Long Press State (~2 Secondi)
     this.longPressTimer = null;
@@ -1053,31 +1059,30 @@ class AppController {
     }
   }
 
-  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256 CON SCADENZA 3 ORE) ---
+  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256 CRITTOGRAFATO CON MEMORIZZAZIONE DISPOSITIVO) ---
   initLockScreen() {
-    const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
-    const lastUnlock = parseInt(localStorage.getItem('massinote_last_unlock') || '0', 10);
     const lockScreen = document.getElementById('lock-screen');
     const pinInput = document.getElementById('lock-pin-input');
+    const savedDeviceAuthToken = localStorage.getItem('massinote_device_auth_token');
 
-    const isUnlocked = lastUnlock > 0 && (Date.now() - lastUnlock < THREE_HOURS_MS);
-
-    if (isUnlocked) {
+    // Se il dispositivo è già stato autenticato e possiede il token crittografato valido
+    if (savedDeviceAuthToken && savedDeviceAuthToken === _0xSEC_DEVICE_AUTH_HASH) {
       lockScreen?.classList.add('hidden');
-    } else {
-      lockScreen?.classList.remove('hidden');
-      if (pinInput) pinInput.value = '';
-      setTimeout(() => {
-        pinInput?.focus();
-      }, 300);
+      return;
     }
+
+    lockScreen?.classList.remove('hidden');
+    if (pinInput) pinInput.value = '';
+    setTimeout(() => {
+      pinInput?.focus();
+    }, 300);
 
     if (!this._lockListenerAttached) {
       this._lockListenerAttached = true;
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-          const currentLast = parseInt(localStorage.getItem('massinote_last_unlock') || '0', 10);
-          if (!currentLast || (Date.now() - currentLast >= THREE_HOURS_MS)) {
+          const currentToken = localStorage.getItem('massinote_device_auth_token');
+          if (!currentToken || currentToken !== _0xSEC_DEVICE_AUTH_HASH) {
             const ls = document.getElementById('lock-screen');
             const pi = document.getElementById('lock-pin-input');
             ls?.classList.remove('hidden');
@@ -1131,6 +1136,8 @@ class AppController {
     const enteredHash = await calculateSha256(enteredPin);
 
     if (enteredHash === _0xSEC_PIN_HASH) {
+      // Memorizza il token di autorizzazione crittografato sul dispositivo in modo sicuro
+      localStorage.setItem('massinote_device_auth_token', _0xSEC_DEVICE_AUTH_HASH);
       localStorage.setItem('massinote_last_unlock', Date.now().toString());
       if (errorMsg) errorMsg.classList.add('hidden');
       
@@ -1200,6 +1207,12 @@ class AppController {
   // --- ORDINAMENTO & CARICAMENTO DATI ---
   sortNotes() {
     this.notes.sort((a, b) => {
+      // Le note "da lavorare" (stella / pinned) hanno priorità assoluta e vanno sempre in cima
+      const aStarred = Boolean(a && (a.starred || a.pinned));
+      const bStarred = Boolean(b && (b.starred || b.pinned));
+      if (aStarred !== bStarred) {
+        return aStarred ? -1 : 1;
+      }
       const timeA = a && a.date ? (new Date(a.date).getTime() || 0) : 0;
       const timeB = b && b.date ? (new Date(b.date).getTime() || 0) : 0;
       return timeB - timeA;
@@ -1236,6 +1249,8 @@ class AppController {
     let location = typeof n.location === 'string' ? n.location : '';
     let folder = typeof n.folder === 'string' ? n.folder : '';
 
+    const isStarred = Boolean(n.starred || n.pinned);
+
     return {
       id: String(n.id || ('note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6))),
       title: title || 'Senza Titolo',
@@ -1248,7 +1263,8 @@ class AppController {
       photos: Array.isArray(n.photos) ? n.photos : [],
       audio: typeof n.audio === 'string' ? n.audio : null,
       locked: Boolean(n.locked),
-      pinned: Boolean(n.pinned),
+      pinned: isStarred,
+      starred: isStarred,
       createdAt: n.createdAt ? String(n.createdAt) : new Date().toISOString(),
       updatedAt: n.updatedAt ? String(n.updatedAt) : new Date().toISOString()
     };
@@ -2499,10 +2515,19 @@ ISTRUZIONI PER LA RISPOSTA:
           )
         : '';
 
+      // Badge Da Lavorare (Stella)
+      const isStarred = Boolean(note.starred || note.pinned);
+      const starredBadgeHtml = isStarred
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shadow-xs" title="Nota contrassegnata come 'Da lavorare' (mostrata in cima)">
+             <i data-lucide="star" class="w-3 h-3 fill-amber-400 text-amber-500"></i>
+             <span>Da lavorare</span>
+           </span>`
+        : '';
+
       return `
         <article 
           onclick="app.openNoteOrPromptPin('${safeId}')"
-          class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
+          class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border ${isStarred ? 'border-amber-300 dark:border-amber-800/80 shadow-md ring-1 ring-amber-400/20' : 'border-slate-200 dark:border-slate-800 shadow-sm'} hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
         >
           <div>
             <!-- Header Card: Data + Badges -->
@@ -2512,6 +2537,7 @@ ISTRUZIONI PER LA RISPOSTA:
                 <span>${formattedDate}</span>
               </span>
               <div class="flex items-center gap-1 flex-wrap">
+                ${starredBadgeHtml}
                 ${lockBadgeHtml}
                 ${audioBadgeHtml}
                 ${photoBadgeHtml}
@@ -2533,7 +2559,7 @@ ISTRUZIONI PER LA RISPOSTA:
 
           <!-- Footer Card: Metadati e Azioni Veloci -->
           <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
-            <div class="flex items-center gap-1.5 flex-wrap max-w-[55%] sm:max-w-[65%]">
+            <div class="flex items-center gap-1.5 flex-wrap max-w-[50%] sm:max-w-[60%]">
               ${locationBadgeHtml}
               ${folderBadgeHtml}
             </div>
@@ -2548,7 +2574,16 @@ ISTRUZIONI PER LA RISPOSTA:
                 <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
               </button>
 
-              <!-- 2. Tasto PDF (Esporta nota e foto in PDF) -->
+              <!-- 2. Tasto Stella (Da Lavorare / Mostra in Cima) -->
+              <button 
+                onclick="event.stopPropagation(); app.toggleNoteStarred('${safeId}')" 
+                class="p-1.5 rounded-lg ${isStarred ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40' : 'text-slate-400'} hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
+                title="${isStarred ? 'Nota contrassegnata come \"Da lavorare\" (in cima) - Clicca per rimuovere' : 'Contrassegna come \"Da lavorare\" (mostra in cima)'}"
+              >
+                <i data-lucide="star" class="w-3.5 h-3.5 ${isStarred ? 'fill-amber-400 text-amber-500' : ''}"></i>
+              </button>
+
+              <!-- 3. Tasto PDF (Esporta nota e foto in PDF) -->
               <button 
                 onclick="event.stopPropagation(); app.exportNoteToPdf('${safeId}')" 
                 class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
@@ -2557,7 +2592,7 @@ ISTRUZIONI PER LA RISPOSTA:
                 <i data-lucide="file-text" class="w-3.5 h-3.5 text-red-500"></i>
               </button>
 
-              <!-- 3. Tasto Chiave/Lucchetto (Protezione Password 1804) -->
+              <!-- 4. Tasto Chiave/Lucchetto (Protezione Password 1804) -->
               <button 
                 onclick="event.stopPropagation(); app.toggleNoteLock('${safeId}')" 
                 class="p-1.5 rounded-lg ${isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40' : 'text-slate-400'} hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
@@ -2566,7 +2601,7 @@ ISTRUZIONI PER LA RISPOSTA:
                 <i data-lucide="${isLocked ? 'lock' : 'key'}" class="w-3.5 h-3.5"></i>
               </button>
 
-              <!-- 4. Tasto Elimina -->
+              <!-- 5. Tasto Elimina -->
               <button 
                 onclick="event.stopPropagation(); app.confirmDeleteNote('${safeId}')" 
                 class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-slate-800 transition-colors cursor-pointer" 
@@ -2580,27 +2615,46 @@ ISTRUZIONI PER LA RISPOSTA:
       `;
     }).join('');
 
-    // Gestione pulsante Carica Altre 30 Note
-    if (loadMoreContainer) {
-      if (filtered.length > this.notesLimit) {
+    // Aggiungi pulsante "Carica altre note" se ci sono più di notesLimit elementi
+    if (filtered.length > this.notesLimit) {
+      if (loadMoreContainer) {
+        const remaining = filtered.length - this.notesLimit;
         loadMoreContainer.classList.remove('hidden');
         loadMoreContainer.innerHTML = `
           <button 
             type="button" 
             onclick="app.loadMoreNotes()" 
-            class="w-full sm:w-auto px-6 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-blue-600 dark:text-blue-400 font-bold text-xs rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 mx-auto"
+            class="px-5 py-2.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl shadow-sm transition-all inline-flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <i data-lucide="chevron-down" class="w-4 h-4"></i>
-            <span>Carica altre 30 note (Mostrate ${toDisplay.length} di ${filtered.length})</span>
+            <i data-lucide="chevron-down" class="w-4 h-4 text-blue-600"></i>
+            <span>Mostra altre note (${remaining} rimanenti)</span>
           </button>
         `;
-      } else {
+      }
+    } else {
+      if (loadMoreContainer) {
         loadMoreContainer.classList.add('hidden');
         loadMoreContainer.innerHTML = '';
       }
     }
 
     if (window.lucide) lucide.createIcons();
+  }
+
+  async toggleNoteStarred(noteId) {
+    const note = this.notes.find(n => n && String(n.id) === String(noteId));
+    if (!note) return;
+
+    note.starred = !Boolean(note.starred || note.pinned);
+    note.pinned = note.starred;
+    note.updatedAt = new Date().toISOString();
+
+    await this.db.put(note);
+    this.sortNotes();
+    this.render();
+    this.updateCounters();
+    this.firebase.saveNote(note).catch(() => {});
+    this.showToast(note.starred ? 'Nota contrassegnata come "Da lavorare" (in cima alla lista)' : 'Nota rimossa da "Da lavorare"', 'info');
   }
 
   // --- ESPORTAZIONE PDF SINGOLA NOTA & FOTO ---
@@ -3225,7 +3279,211 @@ ISTRUZIONI PER LA RISPOSTA:
       }
     }
 
+    // 4. Mappa Geografica delle Note
+    this.renderNotesMap();
+
     if (window.lucide) lucide.createIcons();
+  }
+
+  // --- MAPPA GEOGRAFICA DELLE NOTE (LEAFLET / OPENSTREETMAP) ---
+  renderNotesMap() {
+    const mapContainer = document.getElementById('stats-notes-map');
+    const mapBadge = document.getElementById('stat-map-count-badge');
+    if (!mapContainer || typeof L === 'undefined') return;
+
+    // Coordinate note: dizionario delle principali città e province italiane ed estere
+    const KNOWN_COORDS = {
+      'roma': [41.9028, 12.4964],
+      'milano': [45.4642, 9.1900],
+      'napoli': [40.8518, 14.2681],
+      'torino': [45.0703, 7.6869],
+      'palermo': [38.1157, 13.3615],
+      'genova': [44.4056, 8.9463],
+      'bologna': [44.4949, 11.3426],
+      'firenze': [43.7696, 11.2558],
+      'bari': [41.1171, 16.8719],
+      'catania': [37.5079, 15.0830],
+      'venezia': [45.4408, 12.3155],
+      'verona': [45.4384, 10.9916],
+      'messina': [38.1938, 15.5540],
+      'padova': [45.4064, 11.8768],
+      'trieste': [45.6495, 13.7768],
+      'brescia': [45.5416, 10.2118],
+      'parma': [44.8015, 10.3279],
+      'taranto': [40.4644, 17.2470],
+      'prato': [43.8777, 11.1022],
+      'modena': [44.6471, 10.9252],
+      'reggio calabria': [38.1113, 15.6473],
+      'reggio emilia': [44.6983, 10.6312],
+      'perugia': [43.1107, 12.3908],
+      'ravenna': [44.4184, 12.2035],
+      'livorno': [43.5485, 10.3106],
+      'cagliari': [39.2238, 9.1217],
+      'foggia': [41.4622, 15.5447],
+      'rimini': [44.0678, 12.5695],
+      'salerno': [40.6824, 14.7681],
+      'ferrara': [44.8381, 11.6198],
+      'sassari': [40.7259, 8.5556],
+      'latina': [41.4676, 12.9037],
+      'monza': [45.5845, 9.2744],
+      'siracusa': [37.0755, 15.2866],
+      'pescara': [42.4618, 14.2161],
+      'bergamo': [45.6983, 9.6773],
+      'forli': [44.2227, 12.0407],
+      'forlì': [44.2227, 12.0407],
+      'trento': [46.0748, 11.1217],
+      'vicenza': [45.5455, 11.5354],
+      'terni': [42.5641, 12.6405],
+      'bolzano': [46.4983, 11.3548],
+      'novara': [45.4469, 8.6210],
+      'piacenza': [45.0526, 9.6929],
+      'ancona': [43.6158, 13.5189],
+      'andria': [41.2286, 16.2974],
+      'arezzo': [43.4633, 11.8797],
+      'udine': [46.0711, 13.2346],
+      'cesena': [44.1391, 12.2431],
+      'lecce': [40.3548, 18.1724],
+      'pesaro': [43.9125, 12.9155],
+      'barletta': [41.3197, 16.2828],
+      'alessandria': [44.9133, 8.6183],
+      'la spezia': [44.1025, 9.8241],
+      'pisa': [43.7228, 10.4017],
+      'pistoia': [43.9333, 10.9167],
+      'lucca': [43.8429, 10.5027],
+      'como': [45.8081, 9.0852],
+      'treviso': [45.6669, 12.2430],
+      'varese': [45.8206, 8.8251],
+      'asti': [44.9008, 8.2069],
+      'ragusa': [36.9269, 14.7306],
+      'cremona': [45.1332, 10.0249],
+      'pavia': [45.1847, 9.1582],
+      'trapani': [38.0176, 12.5365],
+      'cosenza': [39.2983, 16.2537],
+      'caltanissetta': [37.4922, 14.0625],
+      'viterbo': [42.4174, 12.1047],
+      'crotone': [39.0808, 17.1272],
+      'savona': [44.3079, 8.4811],
+      'matera': [40.6664, 16.6043],
+      'agrigento': [37.3111, 13.5765],
+      'potenza': [40.6404, 15.8056],
+      'campobasso': [41.5603, 14.6627],
+      'aosta': [45.7371, 7.3201],
+      'l\'aquila': [42.3498, 13.3995],
+      'laquila': [42.3498, 13.3995],
+      'cuneo': [44.3844, 7.5427],
+      'benevento': [41.1307, 14.7797],
+      'avellino': [40.9147, 14.7952],
+      'caserta': [41.0725, 14.3323],
+      'siena': [43.3188, 11.3308],
+      'grosseto': [42.7634, 11.1118],
+      'belluno': [46.1425, 12.2167],
+      'rovigo': [45.0711, 11.7906],
+      'mantova': [45.1564, 10.7914],
+      'lecco': [45.8566, 9.3977],
+      'lodi': [45.3142, 9.5033],
+      'soncino': [45.4000, 9.8700],
+      'italia': [42.5041, 12.6463]
+    };
+
+    // Inizializza mappa se non esiste
+    if (!this.statsMap) {
+      this.statsMap = L.map('stats-notes-map', {
+        center: [42.5041, 12.6463],
+        zoom: 5,
+        scrollWheelZoom: false
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(this.statsMap);
+
+      this.statsMarkersLayer = L.layerGroup().addTo(this.statsMap);
+    }
+
+    this.statsMarkersLayer.clearLayers();
+
+    const points = [];
+    let mappedCount = 0;
+
+    for (const note of this.notes) {
+      if (!note || !note.location) continue;
+      const locRaw = String(note.location).trim();
+      if (!locRaw) continue;
+
+      let lat = null;
+      let lng = null;
+
+      // 1. Controlla se contiene coordinate numeriche lat, lng
+      const coordMatch = locRaw.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/);
+      if (coordMatch) {
+        const pLat = parseFloat(coordMatch[1]);
+        const pLng = parseFloat(coordMatch[2]);
+        if (pLat >= -90 && pLat <= 90 && pLng >= -180 && pLng <= 180) {
+          lat = pLat;
+          lng = pLng;
+        }
+      }
+
+      // 2. Se non ci sono coordinate, cerca nel dizionario città
+      if (lat === null || lng === null) {
+        const lowerLoc = locRaw.toLowerCase();
+        for (const [key, coords] of Object.entries(KNOWN_COORDS)) {
+          if (lowerLoc.includes(key)) {
+            // Piccolo offset casuale per evitare sovrapposizione perfetta di più note nella stessa città
+            lat = coords[0] + (Math.random() - 0.5) * 0.015;
+            lng = coords[1] + (Math.random() - 0.5) * 0.015;
+            break;
+          }
+        }
+      }
+
+      if (lat !== null && lng !== null) {
+        mappedCount++;
+        points.push([lat, lng]);
+
+        const safeId = String(note.id || '').replace(/'/g, "\\'");
+        const noteDate = parseDateSafe(note.date);
+        const formattedDate = formatItalianDate(noteDate);
+
+        const marker = L.marker([lat, lng]);
+        const popupHtml = `
+          <div class="p-1 space-y-1 text-slate-800" style="font-family: system-ui, sans-serif; min-width: 140px;">
+            <div class="font-bold text-xs text-blue-600 line-clamp-1">${escapeHtml(note.title || 'Senza Titolo')}</div>
+            <div class="text-[11px] text-slate-600">📍 ${escapeHtml(note.location)}</div>
+            <div class="text-[10px] text-slate-400">📅 ${formattedDate}</div>
+            <button 
+              type="button" 
+              onclick="app.openNoteOrPromptPin('${safeId}')" 
+              style="margin-top: 6px; width: 100%; padding: 4px 8px; background: #2563eb; color: white; border-radius: 6px; font-weight: bold; font-size: 11px; border: none; cursor: pointer;"
+            >
+              Apri Nota
+            </button>
+          </div>
+        `;
+        marker.bindPopup(popupHtml);
+        marker.addTo(this.statsMarkersLayer);
+      }
+    }
+
+    if (mapBadge) {
+      mapBadge.textContent = `${mappedCount} ${mappedCount === 1 ? 'Punto Mappato' : 'Punti Mappati'}`;
+    }
+
+    if (points.length > 0) {
+      try {
+        const bounds = L.latLngBounds(points);
+        this.statsMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+      } catch (e) {
+        this.statsMap.setView([42.5041, 12.6463], 5);
+      }
+    } else {
+      this.statsMap.setView([42.5041, 12.6463], 5);
+    }
+
+    setTimeout(() => {
+      this.statsMap?.invalidateSize();
+    }, 200);
   }
 
   // --- EDITOR NOTA ---
@@ -3246,6 +3504,7 @@ ISTRUZIONI PER LA RISPOSTA:
       // Modifica nota esistente
       const note = this.notes.find(n => n.id === noteId);
       if (note) {
+        this.editingNoteStarred = Boolean(note.starred || note.pinned);
         if (titleInput) titleInput.value = note.title || '';
         if (contentInput) contentInput.value = note.content || '';
         if (dateInput) dateInput.value = toDatetimeLocalValue(new Date(note.date));
@@ -3258,6 +3517,7 @@ ISTRUZIONI PER LA RISPOSTA:
       }
     } else {
       // Nuova nota
+      this.editingNoteStarred = false;
       const initialDate = defaultDate || new Date();
       if (titleInput) titleInput.value = '';
       if (contentInput) contentInput.value = '';
@@ -3272,6 +3532,7 @@ ISTRUZIONI PER LA RISPOSTA:
       this.detectCurrentLocationAndWeather();
     }
 
+    this.updateEditorStarUI();
     this.editorPhotosExpanded = false;
     this.renderEditorPhotos();
     this.renderEditorAudio();
@@ -3287,6 +3548,38 @@ ISTRUZIONI PER LA RISPOSTA:
       if (!noteId) titleInput?.focus();
     }, 80);
 
+    if (window.lucide) lucide.createIcons();
+  }
+
+  toggleEditorStarred() {
+    this.editingNoteStarred = !this.editingNoteStarred;
+    this.updateEditorStarUI();
+    this.showToast(this.editingNoteStarred ? 'Nota impostata come "Da lavorare" (in cima)' : 'Nota rimossa da "Da lavorare"', 'info');
+  }
+
+  updateEditorStarUI() {
+    const starBtn = document.getElementById('editor-star-btn');
+    const starIcon = document.getElementById('editor-star-icon');
+    const starLabel = document.getElementById('editor-star-label');
+    if (!starBtn) return;
+
+    if (this.editingNoteStarred) {
+      starBtn.classList.remove('text-slate-400', 'hover:text-amber-500');
+      starBtn.classList.add('text-amber-600', 'dark:text-amber-400', 'bg-amber-50', 'dark:bg-amber-950/60');
+      if (starIcon) {
+        starIcon.classList.remove('text-slate-400');
+        starIcon.classList.add('fill-amber-400', 'text-amber-500');
+      }
+      if (starLabel) starLabel.textContent = 'Da lavorare';
+    } else {
+      starBtn.classList.remove('text-amber-600', 'dark:text-amber-400', 'bg-amber-50', 'dark:bg-amber-950/60');
+      starBtn.classList.add('text-slate-400', 'hover:text-amber-500');
+      if (starIcon) {
+        starIcon.classList.remove('fill-amber-400', 'text-amber-500');
+        starIcon.classList.add('text-slate-400');
+      }
+      if (starLabel) starLabel.textContent = 'Da lavorare';
+    }
     if (window.lucide) lucide.createIcons();
   }
 
@@ -3717,6 +4010,10 @@ ISTRUZIONI PER LA RISPOSTA:
     const nowIso = new Date().toISOString();
     const existing = this.editingNoteId ? this.notes.find(n => n.id === this.editingNoteId) : null;
 
+    const isNoteStarred = this.editingNoteStarred !== undefined 
+      ? Boolean(this.editingNoteStarred) 
+      : (existing ? Boolean(existing.starred || existing.pinned) : false);
+
     const noteObj = {
       id: noteId,
       title: title,
@@ -3728,7 +4025,9 @@ ISTRUZIONI PER LA RISPOSTA:
       tags: existing?.tags || [],
       photos: [...this.editorPhotos],
       audio: this.editorAudio || null,
-      pinned: existing ? Boolean(existing.pinned) : false,
+      locked: existing ? Boolean(existing.locked) : false,
+      pinned: isNoteStarred,
+      starred: isNoteStarred,
       createdAt: existing?.createdAt || dateVal.toISOString(),
       updatedAt: nowIso
     };
@@ -4176,7 +4475,8 @@ ISTRUZIONI PER LA RISPOSTA:
             photos: Array.isArray(n.photos) ? n.photos : (Array.isArray(n.images) ? n.images : []),
             audio: typeof n.audio === 'string' ? n.audio : null,
             locked: Boolean(n.locked),
-            pinned: Boolean(n.pinned),
+            pinned: Boolean(n.starred || n.pinned),
+            starred: Boolean(n.starred || n.pinned),
             createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : noteDate.toISOString(),
             updatedAt: n.updatedAt ? new Date(n.updatedAt).toISOString() : new Date().toISOString()
           };
