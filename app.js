@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.30';
+const APP_VERSION = '2.31';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -1327,14 +1327,16 @@ class AppController {
       this.stopVoiceRecording();
       return;
     }
-    if (this.isLongPressTriggered || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 500)) {
-      this.isLongPressTriggered = false;
+    if (Date.now() - (this._lastOpenEditorTime || 0) < 400) {
+      return;
+    }
+    if (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 600) {
       return;
     }
     this.openEditor();
   }
 
-  // --- SUPPORTO PRESSIONE PROLUNGATA (CIRCA 1.5 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
+  // --- SUPPORTO PRESSIONE PROLUNGATA (1.2 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
   initLongPressListeners() {
     const fabBtn = document.getElementById('main-fab-btn');
     const desktopBtn = document.getElementById('desktop-add-btn');
@@ -1346,6 +1348,8 @@ class AppController {
 
       let pressTimer = null;
       let animInterval = null;
+      let pressStartTime = 0;
+      let isLongPressed = false;
       let startX = 0;
       let startY = 0;
 
@@ -1358,13 +1362,13 @@ class AppController {
 
       const startHold = (e) => {
         if (this.isRecording) return;
-        this.isLongPressTriggered = false;
-        this.isLongPressRecording = false;
+        isLongPressed = false;
+        pressStartTime = Date.now();
         startX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
         startY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
 
         let elapsed = 0;
-        const total = 1500; // 1.5 secondi di pressione continuata
+        const total = 1200; // 1.2 secondi di pressione per avviare la voce
         const step = 25;
 
         if (progressRing && progressCircle) {
@@ -1381,7 +1385,7 @@ class AppController {
         }, step);
 
         pressTimer = setTimeout(() => {
-          this.isLongPressTriggered = true;
+          isLongPressed = true;
           this.isLongPressRecording = true;
           cleanupHold();
 
@@ -1393,18 +1397,28 @@ class AppController {
         }, total);
       };
 
-      const handleRelease = () => {
+      const handleRelease = (e) => {
         cleanupHold();
-        if (this.isRecording && this.isLongPressRecording) {
-          this.stopVoiceRecording();
-          this.isLongPressRecording = false;
+
+        if (this.isRecording || isLongPressed) {
+          if (this.isRecording && this.isLongPressRecording) {
+            this.stopVoiceRecording();
+            this.isLongPressRecording = false;
+          }
+          isLongPressed = false;
+          return;
+        }
+
+        // Se è stato un tocco rapido (< 1.2 secondi) e non si sta registrando
+        const pressDuration = Date.now() - pressStartTime;
+        if (pressDuration < 1200 && (Date.now() - (this.lastVoiceRecordingEndTime || 0) > 600)) {
+          if (Date.now() - (this._lastOpenEditorTime || 0) > 400) {
+            this.openEditor();
+          }
         }
       };
 
-      btn.addEventListener('pointerdown', (e) => {
-        startHold(e);
-      });
-
+      btn.addEventListener('pointerdown', startHold);
       btn.addEventListener('pointermove', (e) => {
         if (!pressTimer) return;
         const curX = e.clientX || 0;
@@ -1413,9 +1427,8 @@ class AppController {
           cleanupHold();
         }
       });
-
       btn.addEventListener('pointerup', handleRelease);
-      btn.addEventListener('pointercancel', handleRelease);
+      btn.addEventListener('pointercancel', cleanupHold);
       btn.addEventListener('pointerleave', (e) => {
         if (pressTimer) cleanupHold();
       });
@@ -3649,6 +3662,7 @@ ISTRUZIONI PER LA RISPOSTA:
 
   // --- EDITOR NOTA ---
   openEditor(noteId = null, defaultDate = null) {
+    this._lastOpenEditorTime = Date.now();
     this.editingNoteId = noteId;
     this.editorPhotos = [];
     this.editorAudio = null;

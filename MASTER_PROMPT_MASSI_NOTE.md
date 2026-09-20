@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.30)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.31)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.30), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.31), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -44,8 +44,8 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`) ad alte prestazioni.
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
 - Funzione Stella "Da Lavorare" (In cima alla lista & Filtro Dedicato):
-  - **Barra Superiore**: Tasto Filtro Stella accanto al tasto AI nella barra di ricerca. Cliccandolo, filtra istantaneamente l'elenco mostrando solo le note con la stella attiva.
-  - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in ambra e la nota viene posta con priorità assoluta in cima alla lista. Nessuna scritta ridondante nel card header (la stella illuminata basta).
+  - **Barra Superiore**: Tasto Filtro Stella accanto al tasto AI nella barra di ricerca. Cliccandolo, filtra istantaneamente l'elenco mostrando solo le note con la stella attiva. Se nessuna nota ha la stella, mostra un banner informativo dedicato con tasto "Mostra tutte".
+  - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in ambra e la nota viene posta con priorità assoluta in cima alla lista.
   - **Editor Nota**: Tasto Stella posizionato nella toolbar di formattazione.
 - Filtro a Tendina "Categoria" & Esportazione PDF Categoria:
   - Posizionato sotto la barra di ricerca nella schermata principale.
@@ -55,8 +55,9 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Tasto Clessidra (`data-lucide="hourglass"`) posizionato a destra del campo "Cartella / Categoria" nell'editor.
   - Se attivato, si illumina e memorizza lo stato in `localStorage` (`massinote_sticky_folder_active`, `massinote_sticky_folder_name`).
   - Tutte le note create successivamente ereditano automaticamente il nome della cartella fissa.
-- Rendering Non-Bloccante & Sincronizzazione Cloud:
-  - All'arrivo dello snapshot da Firestore, l'unione e il rendering visivo a schermo (`render()`) avvengono istantaneamente in memoria, passando allo stato "Sincronizzato".
+- Tasto "+" Istantaneo & Hold-to-Record (1.2s):
+  - **Tocco/Click Rapido (< 1.2s)**: Apre istantaneamente una nuova nota nell'editor a schermo intero.
+  - **Pressione Prolungata (>= 1.2s)**: Attiva il progress ring e avvia la registrazione vocale con feedback aptico (vibrazione). Al rilascio, la registrazione termina e si apre la modale di riassunto con Intelligenza Artificiale Gemini.
 
 ======================================================================
 4. INTEGRAZIONE INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.6 FLASH)
@@ -75,7 +76,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 ======================================================================
 - Registrazione Vocale Differenziata:
   - **Dall'Editor (Tasto Microfono)**: Allo stop, la modale mostra il tasto **"Salva"** (icona disco) per allegare direttamente la traccia audio all'interno della nota corrente senza riassunto AI.
-  - **Dalla Home (Hold-to-Record "+")**: Pressione continuata di 1,5 secondi con generazione automatica di nuova nota con IA.
+  - **Dalla Home (Hold-to-Record "+")**: Pressione continuata di 1,2 secondi con generazione automatica di nuova nota con IA.
 - Mappa Geografica delle Note (Statistiche):
   - Mappa interattiva integrata con Leaflet sotto la sezione "Cartelle & Categorie".
   - Mostra i marcatori di tutte le note che contengono indicazioni di luogo o coordinate geografiche, con popup interattivo contenente titolo, data, località e pulsante rapido per aprire la nota nell'editor.
@@ -110,7 +111,7 @@ L'app dispone di 5 viste principali:
    - 6 Card KPI + 2 Card Dettaglio (Spazio DB, Token AI).
    - 3 Sezioni Comprimibili: Anni, Luoghi, Cartelle.
    - Mappa Geografica Leaflet con geocoding e marker interattivi.
-4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Backup, Ripristino, Eliminazione totale, Versione 2.30.
+4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Backup, Ripristino, Eliminazione totale, Versione 2.31.
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
    - Toolbar: Salva, Annulla, Allega Foto, Registra Voce.
    - Toolbar formattazione rapida: B (Grassetto), - (Separatore), Orologio (Data GG/MM/AA), PDF (Esporta PDF), Stella (Da Lavorare), Conteggio parole.
