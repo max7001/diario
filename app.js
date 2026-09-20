@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.31';
+const APP_VERSION = '2.33';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -1323,20 +1323,18 @@ class AppController {
     if (e) {
       try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
     }
+    // Se è appena terminata una registrazione vocale da hold, ignora il click
+    if (Date.now() < (this._ignoreClickUntil || 0) || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 600)) {
+      return;
+    }
     if (this.isRecording) {
       this.stopVoiceRecording();
-      return;
-    }
-    if (Date.now() - (this._lastOpenEditorTime || 0) < 400) {
-      return;
-    }
-    if (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 600) {
       return;
     }
     this.openEditor();
   }
 
-  // --- SUPPORTO PRESSIONE PROLUNGATA (1.2 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
+  // --- SUPPORTO PRESSIONE PROLUNGATA (0.9s) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
   initLongPressListeners() {
     const fabBtn = document.getElementById('main-fab-btn');
     const desktopBtn = document.getElementById('desktop-add-btn');
@@ -1348,8 +1346,9 @@ class AppController {
 
       let pressTimer = null;
       let animInterval = null;
-      let pressStartTime = 0;
       let isLongPressed = false;
+      let isRecordingTriggered = false;
+      let pressStartTime = 0;
       let startX = 0;
       let startY = 0;
 
@@ -1363,13 +1362,14 @@ class AppController {
       const startHold = (e) => {
         if (this.isRecording) return;
         isLongPressed = false;
+        isRecordingTriggered = false;
         pressStartTime = Date.now();
         startX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
         startY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
 
         let elapsed = 0;
-        const total = 1200; // 1.2 secondi di pressione per avviare la voce
-        const step = 25;
+        const total = 900; // 0.9s di pressione continuata per avviare la registrazione vocale
+        const step = 20;
 
         if (progressRing && progressCircle) {
           progressRing.classList.remove('hidden');
@@ -1386,6 +1386,7 @@ class AppController {
 
         pressTimer = setTimeout(() => {
           isLongPressed = true;
+          isRecordingTriggered = true;
           this.isLongPressRecording = true;
           cleanupHold();
 
@@ -1400,37 +1401,42 @@ class AppController {
       const handleRelease = (e) => {
         cleanupHold();
 
-        if (this.isRecording || isLongPressed) {
+        if (isRecordingTriggered || isLongPressed || (this.isRecording && this.isLongPressRecording)) {
           if (this.isRecording && this.isLongPressRecording) {
             this.stopVoiceRecording();
             this.isLongPressRecording = false;
           }
+          isRecordingTriggered = false;
           isLongPressed = false;
+          this._ignoreClickUntil = Date.now() + 600;
           return;
         }
 
-        // Se è stato un tocco rapido (< 1.2 secondi) e non si sta registrando
-        const pressDuration = Date.now() - pressStartTime;
-        if (pressDuration < 1200 && (Date.now() - (this.lastVoiceRecordingEndTime || 0) > 600)) {
-          if (Date.now() - (this._lastOpenEditorTime || 0) > 400) {
-            this.openEditor();
-          }
+        // Tocco rapido (< 900ms): apri subito l'editor della nuova nota
+        const duration = Date.now() - pressStartTime;
+        if (duration < 900 && !this.isRecording) {
+          this.openEditor();
         }
       };
 
       btn.addEventListener('pointerdown', startHold);
       btn.addEventListener('pointermove', (e) => {
         if (!pressTimer) return;
-        const curX = e.clientX || 0;
-        const curY = e.clientY || 0;
+        const curX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
+        const curY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
         if (Math.hypot(curX - startX, curY - startY) > 50) {
           cleanupHold();
         }
       });
       btn.addEventListener('pointerup', handleRelease);
-      btn.addEventListener('pointercancel', cleanupHold);
-      btn.addEventListener('pointerleave', (e) => {
-        if (pressTimer) cleanupHold();
+      btn.addEventListener('pointercancel', () => {
+        cleanupHold();
+        if (this.isRecording && this.isLongPressRecording) {
+          this.stopVoiceRecording();
+          this.isLongPressRecording = false;
+        }
+        isRecordingTriggered = false;
+        isLongPressed = false;
       });
     };
 
@@ -3662,72 +3668,83 @@ ISTRUZIONI PER LA RISPOSTA:
 
   // --- EDITOR NOTA ---
   openEditor(noteId = null, defaultDate = null) {
-    this._lastOpenEditorTime = Date.now();
-    this.editingNoteId = noteId;
-    this.editorPhotos = [];
-    this.editorAudio = null;
-
-    const titleInput = document.getElementById('editor-title');
-    const contentInput = document.getElementById('editor-content');
-    const dateInput = document.getElementById('editor-datetime-input');
-    const weatherInput = document.getElementById('editor-weather');
-    const locationInput = document.getElementById('editor-location');
-    const folderInput = document.getElementById('editor-folder');
-    const deleteBtn = document.getElementById('editor-delete-btn');
-
-    if (noteId) {
-      // Modifica nota esistente
-      const note = this.notes.find(n => n.id === noteId);
-      if (note) {
-        this.editingNoteStarred = Boolean(note.starred || note.pinned);
-        if (titleInput) titleInput.value = note.title || '';
-        if (contentInput) contentInput.value = note.content || '';
-        if (dateInput) dateInput.value = toDatetimeLocalValue(new Date(note.date));
-        if (weatherInput) weatherInput.value = note.weather || '';
-        if (locationInput) locationInput.value = note.location || '';
-        if (folderInput) folderInput.value = note.folder || '';
-        this.editorPhotos = note.photos ? [...note.photos] : [];
-        this.editorAudio = note.audio || null;
-        deleteBtn?.classList.remove('hidden');
-      }
-    } else {
-      // Nuova nota
-      this.editingNoteStarred = false;
-      const initialDate = defaultDate || new Date();
-      if (titleInput) titleInput.value = '';
-      if (contentInput) contentInput.value = '';
-      if (dateInput) dateInput.value = toDatetimeLocalValue(initialDate);
-      if (weatherInput) weatherInput.value = '';
-      if (locationInput) locationInput.value = '';
-      // Precompila con la Cartella Fissa se attiva
-      if (folderInput) {
-        folderInput.value = (this.isStickyFolderActive && this.stickyFolderName) ? this.stickyFolderName : '';
-      }
+    try {
+      this._lastOpenEditorTime = Date.now();
+      this.editingNoteId = noteId;
+      this.editorPhotos = [];
       this.editorAudio = null;
-      deleteBtn?.classList.add('hidden');
 
-      // Rilevamento automatico della posizione (GPS / Cella / Wi-Fi) e del meteo corrente
-      this.detectCurrentLocationAndWeather();
+      const titleInput = document.getElementById('editor-title');
+      const contentInput = document.getElementById('editor-content');
+      const dateInput = document.getElementById('editor-datetime-input');
+      const weatherInput = document.getElementById('editor-weather');
+      const locationInput = document.getElementById('editor-location');
+      const folderInput = document.getElementById('editor-folder');
+      const deleteBtn = document.getElementById('editor-delete-btn');
+
+      if (noteId) {
+        // Modifica nota esistente
+        const note = this.notes.find(n => n.id === noteId);
+        if (note) {
+          this.editingNoteStarred = Boolean(note.starred || note.pinned);
+          if (titleInput) titleInput.value = note.title || '';
+          if (contentInput) contentInput.value = note.content || '';
+          if (dateInput) dateInput.value = toDatetimeLocalValue(new Date(note.date));
+          if (weatherInput) weatherInput.value = note.weather || '';
+          if (locationInput) locationInput.value = note.location || '';
+          if (folderInput) folderInput.value = note.folder || '';
+          this.editorPhotos = note.photos ? [...note.photos] : [];
+          this.editorAudio = note.audio || null;
+          deleteBtn?.classList.remove('hidden');
+        }
+      } else {
+        // Nuova nota
+        this.editingNoteStarred = false;
+        const initialDate = defaultDate || new Date();
+        if (titleInput) titleInput.value = '';
+        if (contentInput) contentInput.value = '';
+        if (dateInput) dateInput.value = toDatetimeLocalValue(initialDate);
+        if (weatherInput) weatherInput.value = '';
+        if (locationInput) locationInput.value = '';
+        // Precompila con la Cartella Fissa se attiva
+        if (folderInput) {
+          folderInput.value = (this.isStickyFolderActive && this.stickyFolderName) ? this.stickyFolderName : '';
+        }
+        this.editorAudio = null;
+        deleteBtn?.classList.add('hidden');
+
+        // Rilevamento automatico della posizione (GPS / Cella / Wi-Fi) e del meteo corrente
+        try {
+          this.detectCurrentLocationAndWeather();
+        } catch (e) {
+          console.warn('Geocoding notice:', e);
+        }
+      }
+
+      try { this.updateEditorStarUI(); } catch (_) {}
+      try { this.updateFolderStickyLockUI(); } catch (_) {}
+      this.editorPhotosExpanded = false;
+      try { this.renderEditorPhotos(); } catch (_) {}
+      try { this.renderEditorAudio(); } catch (_) {}
+      try { this.onEditorContentChange(); } catch (_) {}
+
+      // Passa alla schermata editor a tutto schermo
+      this.switchView('editor');
+      try { this.adjustEditorTextareaHeight(); } catch (_) {}
+
+      // Ricalcola l'altezza esatta dopo il rendering della vista ed eventuale focus
+      setTimeout(() => {
+        try { this.adjustEditorTextareaHeight(); } catch (_) {}
+        if (!noteId) titleInput?.focus();
+      }, 80);
+
+      if (window.lucide) {
+        try { lucide.createIcons(); } catch (_) {}
+      }
+    } catch (err) {
+      console.error('Errore durante apertura editor:', err);
+      this.switchView('editor');
     }
-
-    this.updateEditorStarUI();
-    this.updateFolderStickyLockUI();
-    this.editorPhotosExpanded = false;
-    this.renderEditorPhotos();
-    this.renderEditorAudio();
-    this.onEditorContentChange();
-
-    // Passa alla schermata editor a tutto schermo
-    this.switchView('editor');
-    this.adjustEditorTextareaHeight();
-
-    // Ricalcola l'altezza esatta dopo il rendering della vista ed eventuale focus
-    setTimeout(() => {
-      this.adjustEditorTextareaHeight();
-      if (!noteId) titleInput?.focus();
-    }, 80);
-
-    if (window.lucide) lucide.createIcons();
   }
 
   toggleFolderStickyLock() {
@@ -3803,28 +3820,18 @@ ISTRUZIONI PER LA RISPOSTA:
 
   updateEditorStarUI() {
     const starBtn = document.getElementById('editor-star-btn');
-    const starIcon = document.getElementById('editor-star-icon');
-    const starLabel = document.getElementById('editor-star-label');
     if (!starBtn) return;
 
     if (this.editingNoteStarred) {
-      starBtn.classList.remove('text-slate-400', 'hover:text-amber-500');
-      starBtn.classList.add('text-amber-600', 'dark:text-amber-400', 'bg-amber-50', 'dark:bg-amber-950/60');
-      if (starIcon) {
-        starIcon.classList.remove('text-slate-400');
-        starIcon.classList.add('fill-amber-400', 'text-amber-500');
-      }
-      if (starLabel) starLabel.textContent = 'Da lavorare';
+      starBtn.className = 'p-1 rounded-lg text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 transition-all flex items-center gap-1 text-xs font-semibold cursor-pointer';
+      starBtn.innerHTML = '<i data-lucide="star" class="w-4 h-4 fill-amber-400 text-amber-500"></i><span id="editor-star-label" class="hidden sm:inline">Da lavorare</span>';
     } else {
-      starBtn.classList.remove('text-amber-600', 'dark:text-amber-400', 'bg-amber-50', 'dark:bg-amber-950/60');
-      starBtn.classList.add('text-slate-400', 'hover:text-amber-500');
-      if (starIcon) {
-        starIcon.classList.remove('fill-amber-400', 'text-amber-500');
-        starIcon.classList.add('text-slate-400');
-      }
-      if (starLabel) starLabel.textContent = 'Da lavorare';
+      starBtn.className = 'p-1 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1 text-xs font-semibold cursor-pointer';
+      starBtn.innerHTML = '<i data-lucide="star" class="w-4 h-4 text-slate-400"></i><span id="editor-star-label" class="hidden sm:inline">Da lavorare</span>';
     }
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) {
+      try { lucide.createIcons(); } catch (_) {}
+    }
   }
 
   renderEditorAudio() {
