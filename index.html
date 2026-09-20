@@ -75,7 +75,7 @@
 
       <!-- Tasto + Nuova Nota Desktop posizionato al CENTRO -->
       <div class="hidden md:flex items-center justify-center flex-1">
-        <button id="desktop-add-btn" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition-all select-none cursor-pointer" title="Clicca per nuova nota, tieni premuto 1.5s per registrare la voce">
+        <button id="desktop-add-btn" onclick="app.handleNewNoteClick(event)" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md shadow-blue-500/20 transition-all select-none cursor-pointer" title="Clicca per nuova nota, tieni premuto 1.5s per registrare la voce">
           <i data-lucide="plus" id="desktop-add-icon-plus" class="w-4 h-4 stroke-[2.5]"></i>
           <i data-lucide="square" id="desktop-add-icon-stop" class="w-4 h-4 fill-current hidden text-red-300 animate-pulse"></i>
           <span id="desktop-add-text">Nuova Nota</span>
@@ -924,6 +924,7 @@
 
         <button 
           id="main-fab-btn" 
+          onclick="app.handleNewNoteClick(event)"
           class="fab-btn w-[76px] h-[76px] rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xl shadow-blue-500/35 select-none relative z-20 transition-all active:scale-95 cursor-pointer"
           title="Tocca per nuova nota, tieni premuto 1.5 secondi per registrare la voce"
         >

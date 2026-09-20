@@ -1319,7 +1319,22 @@ class AppController {
     }
   }
 
-  // --- SUPPORTO PRESSIONE PROLUNGATA (CIRCA 2 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
+  handleNewNoteClick(e) {
+    if (e) {
+      try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+    }
+    if (this.isRecording) {
+      this.stopVoiceRecording();
+      return;
+    }
+    if (this.isLongPressTriggered || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 500)) {
+      this.isLongPressTriggered = false;
+      return;
+    }
+    this.openEditor();
+  }
+
+  // --- SUPPORTO PRESSIONE PROLUNGATA (CIRCA 1.5 SECONDI) & REGISTRAZIONE VOCALE (HOLD-TO-RECORD) ---
   initLongPressListeners() {
     const fabBtn = document.getElementById('main-fab-btn');
     const desktopBtn = document.getElementById('desktop-add-btn');
@@ -1331,8 +1346,6 @@ class AppController {
 
       let pressTimer = null;
       let animInterval = null;
-      let isLongPressed = false;
-      let isRecordingTriggered = false;
       let startX = 0;
       let startY = 0;
 
@@ -1344,11 +1357,9 @@ class AppController {
       };
 
       const startHold = (e) => {
-        // Se stiamo già registrando, il click/tap gestirà lo stop manuale
         if (this.isRecording) return;
-        
-        isLongPressed = false;
-        isRecordingTriggered = false;
+        this.isLongPressTriggered = false;
+        this.isLongPressRecording = false;
         startX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
         startY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
 
@@ -1370,87 +1381,53 @@ class AppController {
         }, step);
 
         pressTimer = setTimeout(() => {
-          isLongPressed = true;
-          isRecordingTriggered = true;
+          this.isLongPressTriggered = true;
           this.isLongPressRecording = true;
           cleanupHold();
-          
-          // Feedback aptico (vibrazione)
+
           if (navigator.vibrate) {
             try { navigator.vibrate([80, 40, 80]); } catch (vErr) {}
           }
-          
-          // Avvia registrazione vocale mentre il tasto è ancora premuto
+
           this.startVoiceRecording();
         }, total);
       };
 
       const handleRelease = () => {
         cleanupHold();
-
-        // Se la registrazione era stata avviata dalla pressione prolungata, si interrompe al rilascio del tasto
-        if (isRecordingTriggered || this.isRecording) {
-          if (this.isRecording && this.isLongPressRecording) {
-            this.stopVoiceRecording();
-          }
-          isRecordingTriggered = false;
-          isLongPressed = true;
-          setTimeout(() => {
-            isLongPressed = false;
-          }, 800);
+        if (this.isRecording && this.isLongPressRecording) {
+          this.stopVoiceRecording();
+          this.isLongPressRecording = false;
         }
       };
 
-      // Pointer Down / Touch Start
       btn.addEventListener('pointerdown', (e) => {
-        try { if (e.pointerId !== undefined) btn.setPointerCapture(e.pointerId); } catch (err) {}
         startHold(e);
       });
 
-      // Pointer Move (tolleranza aumentata a 60px)
       btn.addEventListener('pointermove', (e) => {
         if (!pressTimer) return;
         const curX = e.clientX || 0;
         const curY = e.clientY || 0;
-        if (Math.hypot(curX - startX, curY - startY) > 60) {
+        if (Math.hypot(curX - startX, curY - startY) > 50) {
           cleanupHold();
         }
       });
 
-      // Pointer Up / Cancel / Touch End (Rilascio tasto)
-      btn.addEventListener('pointerup', (e) => {
-        try { if (e.pointerId !== undefined) btn.releasePointerCapture(e.pointerId); } catch (err) {}
-        handleRelease();
-      });
-      btn.addEventListener('pointercancel', (e) => {
-        try { if (e.pointerId !== undefined) btn.releasePointerCapture(e.pointerId); } catch (err) {}
-        handleRelease();
-      });
-
-      // Click Event (per tocco rapido normale < 1.5 secondi)
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isLongPressed || isRecordingTriggered || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 800)) {
-          isLongPressed = false;
-          isRecordingTriggered = false;
-          return;
-        }
-        if (this.isRecording) {
-          this.stopVoiceRecording();
-        } else {
-          this.openEditor();
-        }
+      btn.addEventListener('pointerup', handleRelease);
+      btn.addEventListener('pointercancel', handleRelease);
+      btn.addEventListener('pointerleave', (e) => {
+        if (pressTimer) cleanupHold();
       });
     };
 
     setupButton(fabBtn);
     setupButton(desktopBtn);
 
-    // Rilascio globale a livello di finestra per massima sicurezza
     window.addEventListener('pointerup', () => {
       if (this.isRecording && this.isLongPressRecording) {
         this.stopVoiceRecording();
+        this.isLongPressRecording = false;
       }
     });
   }
@@ -2298,19 +2275,14 @@ ISTRUZIONI PER LA RISPOSTA:
 
   updateFilterStarredUI() {
     const btn = document.getElementById('filter-starred-btn');
-    const icon = document.getElementById('filter-starred-icon');
     if (!btn) return;
 
     if (this.currentFilter === 'starred') {
       btn.className = 'p-2 sm:px-3 sm:py-2.5 rounded-xl font-bold transition-all bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm';
-      if (icon) {
-        icon.className = 'w-4 h-4 fill-amber-400 text-amber-500';
-      }
+      btn.innerHTML = `<i data-lucide="star" class="w-4 h-4 fill-amber-400 text-amber-500"></i><span class="hidden md:inline">Da lavorare</span>`;
     } else {
       btn.className = 'p-2 sm:px-3 sm:py-2.5 rounded-xl font-bold transition-all bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300 dark:hover:bg-amber-950/40 dark:hover:text-amber-400 flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer active:scale-95 text-xs sm:text-sm';
-      if (icon) {
-        icon.className = 'w-4 h-4 text-slate-400';
-      }
+      btn.innerHTML = `<i data-lucide="star" class="w-4 h-4 text-slate-400"></i><span class="hidden md:inline">Da lavorare</span>`;
     }
     if (window.lucide) lucide.createIcons();
   }
@@ -2594,12 +2566,32 @@ ISTRUZIONI PER LA RISPOSTA:
     }
 
     if (filtered.length === 0) {
-      if (grid) grid.innerHTML = '';
+      if (grid) {
+        if (this.currentFilter === 'starred') {
+          grid.innerHTML = `
+            <div class="col-span-full py-12 text-center text-slate-400 dark:text-slate-500">
+              <i data-lucide="star-off" class="w-12 h-12 mx-auto mb-3 opacity-40 text-amber-500"></i>
+              <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">Nessuna nota contrassegnata con la stella "Da lavorare"</p>
+              <p class="text-xs mt-1 text-slate-500 dark:text-slate-400">Clicca sull'icona della stella in fondo a una nota per contrassegnarla e trovarla qui in cima.</p>
+              <button onclick="app.setFilter('all')" class="mt-4 px-4 py-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold hover:underline cursor-pointer border border-amber-200 dark:border-amber-800">
+                Mostra tutte le note
+              </button>
+            </div>
+          `;
+          if (window.lucide) lucide.createIcons();
+        } else {
+          grid.innerHTML = '';
+        }
+      }
       if (loadMoreContainer) {
         loadMoreContainer.classList.add('hidden');
         loadMoreContainer.innerHTML = '';
       }
-      emptyState?.classList.remove('hidden');
+      if (this.currentFilter === 'starred') {
+        emptyState?.classList.add('hidden');
+      } else {
+        emptyState?.classList.remove('hidden');
+      }
       return;
     }
 
