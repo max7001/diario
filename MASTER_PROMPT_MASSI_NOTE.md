@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.29)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.30)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.29), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.30), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -38,15 +38,23 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - L'apertura della nota o l'esportazione richiede il PIN di sicurezza `1804` (verificato tramite hash crittografico SHA-256 nella modale `#note-pin-modal`).
 
 ======================================================================
-3. MOTORE DI PERSISTENZA IBRIDO & GESTIONE NOTE "DA LAVORARE" (STELLA)
+3. MOTORE DI PERSISTENZA IBRIDO, CATEGORIE & NOTE "DA LAVORARE" (STELLA)
 ======================================================================
 - Architettura a Doppio Livello:
   - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`) ad alte prestazioni.
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
 - Funzione Stella "Da Lavorare" (In cima alla lista & Filtro Dedicato):
   - **Barra Superiore**: Tasto Filtro Stella accanto al tasto AI nella barra di ricerca. Cliccandolo, filtra istantaneamente l'elenco mostrando solo le note con la stella attiva.
-  - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in giallo/ambra e la nota viene posta con priorità assoluta in cima alla lista.
+  - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in ambra e la nota viene posta con priorità assoluta in cima alla lista. Nessuna scritta ridondante nel card header (la stella illuminata basta).
   - **Editor Nota**: Tasto Stella posizionato nella toolbar di formattazione.
+- Filtro a Tendina "Categoria" & Esportazione PDF Categoria:
+  - Posizionato sotto la barra di ricerca nella schermata principale.
+  - Menu a tendina che mostra tutte le categorie associate alle note, ordinate per data di creazione più recente in alto, con relativo conteggio note.
+  - Tasto PDF dedicato per la categoria selezionata: genera un PDF multi-pagina (ogni nota inizia in una nuova pagina, con metadati completi e foto formattate a 3 per riga).
+- Cartella Fissa / Clessidra nell'Editor:
+  - Tasto Clessidra (`data-lucide="hourglass"`) posizionato a destra del campo "Cartella / Categoria" nell'editor.
+  - Se attivato, si illumina e memorizza lo stato in `localStorage` (`massinote_sticky_folder_active`, `massinote_sticky_folder_name`).
+  - Tutte le note create successivamente ereditano automaticamente il nome della cartella fissa.
 - Rendering Non-Bloccante & Sincronizzazione Cloud:
   - All'arrivo dello snapshot da Firestore, l'unione e il rendering visivo a schermo (`render()`) avvengono istantaneamente in memoria, passando allo stato "Sincronizzato".
 
@@ -63,7 +71,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Risponde in italiano pulito formulando risposte contestualizzate alle note salvate.
 
 ======================================================================
-5. REGISTRAZIONE VOCALE DIFFERENZIATA, MAPPA NOTE, PDF & FOTO
+5. REGISTRAZIONE VOCALE, MAPPA NOTE, PDF & FOTO
 ======================================================================
 - Registrazione Vocale Differenziata:
   - **Dall'Editor (Tasto Microfono)**: Allo stop, la modale mostra il tasto **"Salva"** (icona disco) per allegare direttamente la traccia audio all'interno della nota corrente senza riassunto AI.
@@ -76,8 +84,10 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Pre-sincronizzazione Cloud (`prepareNoteForCloud` & `compressBase64Image`).
   - Carosello touch-friendly con rotazione automatica e manuale a 90°.
   - Galleria foto comprimibile nell'editor se superiore a 4 foto.
-- Esportazione PDF per Singola Nota:
-  - Icona PDF su ogni card per esportare/stampare la scheda della nota completa.
+- Esportazione PDF Completa:
+  - Tasto PDF nella toolbar di formattazione dell'Editor per esportare la nota in lavorazione al volo.
+  - Tasto PDF su ogni card nota per esportare la singola nota.
+  - Tasto PDF nel filtro Categoria per esportare l'intera categoria (1 nota per pagina, foto a 3 per riga).
 
 ======================================================================
 6. BACKUP & RIPRISTINO DATI COMPLETO
@@ -93,26 +103,16 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 L'app dispone di 5 viste principali:
 1. **VISTA NOTE (`#view-notes`)**:
    - Layout a riga unica per la barra di ricerca: Campo di input + Tasto "AI" + Tasto "Filtro Stella".
-   - Card note con badge (Stella Da Lavorare, Protetta, Vocale, Foto, Meteo, Luogo, Cartella) e pulsanti rapidi (Condividi, Stella, PDF, Chiave, Cestino).
+   - Filtro Categoria: Tendina categorie ordinate per data decrescente + Tasto PDF Categoria.
+   - Card note con badge (Protetta, Vocale, Foto, Meteo, Luogo, Cartella) e pulsanti rapidi (Condividi, Stella ambra, PDF, Chiave, Cestino).
 2. **VISTA CALENDARIO (`#view-calendar`)**: Griglia mensile completa e visualizzatore note del giorno.
 3. **VISTA STATISTICHE (`#view-stats`)**:
    - 6 Card KPI + 2 Card Dettaglio (Spazio DB, Token AI).
    - 3 Sezioni Comprimibili: Anni, Luoghi, Cartelle.
-   - 4a Sezione: **Mappa Geografica delle Note** con marcatori interattivi.
-4. **VISTA IMPOSTAZIONI (`#view-settings`)**:
-   - Tema chiaro/scuro.
-   - Box compatto "Backup & Ripristino Dati" (tasti affiancati Backup e Ripristina).
-   - Box "Archiviazione Locale".
-   - Footer: "MassiNote WebApp • Versione 2.29".
+   - Mappa Geografica Leaflet con geocoding e marker interattivi.
+4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Backup, Ripristino, Eliminazione totale, Versione 2.30.
 5. **VISTA EDITOR NOTA (`#view-editor`)**:
-   - Header con Chiudi, Data/ora, Microfono (registra e allega), Foto, Salva, Cestino.
-   - Toolbar formattazione con: `B` (Grassetto), `-` (Separatore), `Orologio` (Data GG/MM/AA), `Stella` (Da lavorare) e contatore parole.
-   - Textarea auto-espandibile, galleria foto ed elementi meteo/geolocalizzazione.
-
-======================================================================
-8. REGOLE DI QUALITÀ & VERSIONAMENTO
-======================================================================
-- Versione attuale: `2.29`.
-- A ogni successiva modifica, incrementare la versione nella costante `APP_VERSION` e nel badge in `index.html`.
-- Sanitizzazione completa dei dati (`sanitizeNote`) per prevenire errori su note con campi nulli.
+   - Toolbar: Salva, Annulla, Allega Foto, Registra Voce.
+   - Toolbar formattazione rapida: B (Grassetto), - (Separatore), Orologio (Data GG/MM/AA), PDF (Esporta PDF), Stella (Da Lavorare), Conteggio parole.
+   - Cartella / Categoria con tasto Clessidra (Cartella Fissa persistente).
 ```

@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.29';
+const APP_VERSION = '2.30';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -941,6 +941,8 @@ class AppController {
     this.editingNoteStarred = false;
     this.editorPhotos = []; // array of base64 strings
     this.editorAudio = null; // base64 audio string
+    this.isStickyFolderActive = localStorage.getItem('massinote_sticky_folder_active') === 'true';
+    this.stickyFolderName = localStorage.getItem('massinote_sticky_folder_name') || '';
 
     // Stats Map State
     this.statsMap = null;
@@ -2319,8 +2321,176 @@ ISTRUZIONI PER LA RISPOSTA:
     this.searchQuery = '';
     const input = document.getElementById('search-input');
     if (input) input.value = '';
+    const catSelect = document.getElementById('category-filter-select');
+    if (catSelect) catSelect.value = '';
     document.getElementById('search-clear-btn')?.classList.add('hidden');
     this.setFilter('all');
+  }
+
+  onCategoryFilterChange(val) {
+    this.notesLimit = 30;
+    if (val && val.trim()) {
+      this.currentFilter = 'folder:' + val.trim();
+    } else {
+      if (this.currentFilter.startsWith('folder:')) {
+        this.currentFilter = 'all';
+      }
+    }
+    this.updateFilterStarredUI();
+    this.renderNotesList();
+  }
+
+  renderCategoryFilterOptions() {
+    const select = document.getElementById('category-filter-select');
+    if (!select) return;
+
+    // Raccogli tutte le categorie uniche e calcola la data massima (più recente) di ciascuna
+    const catMap = new Map();
+
+    for (const n of this.notes) {
+      if (!n) continue;
+      const cat = (n.folder || '').trim();
+      if (!cat) continue;
+      const time = n.date ? (new Date(n.date).getTime() || 0) : 0;
+      if (!catMap.has(cat)) {
+        catMap.set(cat, { count: 1, latestTime: time });
+      } else {
+        const entry = catMap.get(cat);
+        entry.count += 1;
+        if (time > entry.latestTime) {
+          entry.latestTime = time;
+        }
+      }
+    }
+
+    // Ordina le categorie per data della nota più recente (ordine decrescente)
+    const sortedCategories = Array.from(catMap.entries()).sort((a, b) => b[1].latestTime - a[1].latestTime);
+
+    let optionsHtml = '<option value="">Tutte le categorie</option>';
+    for (const [cat, data] of sortedCategories) {
+      optionsHtml += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)} (${data.count})</option>`;
+    }
+
+    const currentSelected = this.currentFilter.startsWith('folder:') ? this.currentFilter.replace('folder:', '') : '';
+    select.innerHTML = optionsHtml;
+    select.value = currentSelected;
+  }
+
+  exportSelectedCategoryToPdf() {
+    const select = document.getElementById('category-filter-select');
+    let selectedCategory = (select?.value || '').trim();
+    if (!selectedCategory && this.currentFilter.startsWith('folder:')) {
+      selectedCategory = this.currentFilter.replace('folder:', '').trim();
+    }
+
+    if (!selectedCategory) {
+      this.showToast('Seleziona prima una Categoria dal menu a tendina per esportarla in PDF', 'warning');
+      return;
+    }
+
+    const matchingNotes = this.notes.filter(n => n && (n.folder || '').trim().toLowerCase() === selectedCategory.toLowerCase());
+    if (matchingNotes.length === 0) {
+      this.showToast(`Nessuna nota trovata per la categoria "${selectedCategory}"`, 'warning');
+      return;
+    }
+
+    // Ordina per data (più recente in alto)
+    matchingNotes.sort((a, b) => {
+      const timeA = a && a.date ? (new Date(a.date).getTime() || 0) : 0;
+      const timeB = b && b.date ? (new Date(b.date).getTime() || 0) : 0;
+      return timeB - timeA;
+    });
+
+    this._generateAndPrintCategoryPdf(selectedCategory, matchingNotes);
+  }
+
+  _generateAndPrintCategoryPdf(categoryName, notes) {
+    const notesHtml = notes.map((note, index) => {
+      let dateObj = parseDateSafe(note.date);
+      const dateFormatted = formatFullItalianDate(dateObj) || formatItalianDate(dateObj);
+      const title = escapeHtml(note.title || 'Senza Titolo');
+      const location = note.location ? `<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">📍 ${escapeHtml(note.location)}</span>` : '';
+      const weather = note.weather ? `<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">☀️ ${escapeHtml(note.weather)}</span>` : '';
+
+      let photosHtml = '';
+      if (Array.isArray(note.photos) && note.photos.length > 0) {
+        photosHtml = `
+          <div style="margin-top:20px;border-top:1.5px dashed #cbd5e1;padding-top:14px;page-break-inside:avoid;">
+            <h4 style="font-size:13px;font-weight:800;color:#334155;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">Fotografie (${note.photos.length})</h4>
+            <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;">
+              ${note.photos.map((p, idx) => `<div style="border-radius:10px;overflow:hidden;border:1px solid #cbd5e1;background:#f8fafc;height:160px;"><img src="${p}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="Foto ${idx+1}"></div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="note-page" style="${index > 0 ? 'page-break-before:always;break-before:page;padding-top:20px;' : ''}">
+          <div class="header">
+            <div class="app-title">MassiNote • Categoria: ${escapeHtml(categoryName)} [${index + 1}/${notes.length}]</div>
+            <h1 class="note-title">${title}</h1>
+            <div class="meta">📅 ${dateFormatted}</div>
+            <div class="badges">
+              <span style="background:#e0e7ff;color:#3730a3;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;margin-right:8px;">📁 ${escapeHtml(categoryName)}</span>
+              ${location} ${weather}
+            </div>
+          </div>
+          <div class="content">${escapeHtml(note.content || 'Nessun testo')}</div>
+          ${photosHtml}
+        </div>
+      `;
+    }).join('');
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const doc = printFrame.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Categoria ${escapeHtml(categoryName)} (${notes.length} note) - MassiNote</title>
+          <style>
+            @page { size: A4; margin: 16mm 14mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.6; margin: 0; padding: 20px; }
+            .header { border-bottom: 2.5px solid #4f46e5; padding-bottom: 12px; margin-bottom: 18px; }
+            .app-title { font-size: 11px; font-weight: 800; color: #4f46e5; text-transform: uppercase; letter-spacing: 1.5px; }
+            .note-title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 6px 0 8px 0; line-height: 1.25; }
+            .meta { font-size: 12px; color: #64748b; font-weight: 600; margin-bottom: 8px; }
+            .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+            .content { font-size: 14px; color: #334155; white-space: pre-wrap; word-break: break-word; background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; line-height: 1.65; }
+            @media print {
+              body { padding: 0; }
+              .content { background: transparent; border: none; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${notesHtml}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      printFrame.contentWindow.focus();
+      printFrame.contentWindow.print();
+      setTimeout(() => {
+        if (printFrame.parentNode) {
+          document.body.removeChild(printFrame);
+        }
+      }, 3000);
+    }, 500);
+
+    this.showToast(`Esportazione PDF categoria "${categoryName}" avviata (${notes.length} note)...`, 'info');
   }
 
   loadMoreNotes() {
@@ -2406,6 +2576,7 @@ ISTRUZIONI PER LA RISPOSTA:
     const loadMoreContainer = document.getElementById('load-more-container');
 
     this.updateCounters();
+    this.renderCategoryFilterOptions();
 
     const filtered = this.getFilteredNotes();
 
@@ -2521,14 +2692,7 @@ ISTRUZIONI PER LA RISPOSTA:
           )
         : '';
 
-      // Badge Da Lavorare (Stella)
       const isStarred = Boolean(note.starred || note.pinned);
-      const starredBadgeHtml = isStarred
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shadow-xs" title="Nota contrassegnata come 'Da lavorare' (mostrata in cima)">
-             <i data-lucide="star" class="w-3 h-3 fill-amber-400 text-amber-500"></i>
-             <span>Da lavorare</span>
-           </span>`
-        : '';
 
       return `
         <article 
@@ -2543,7 +2707,6 @@ ISTRUZIONI PER LA RISPOSTA:
                 <span>${formattedDate}</span>
               </span>
               <div class="flex items-center gap-1 flex-wrap">
-                ${starredBadgeHtml}
                 ${lockBadgeHtml}
                 ${audioBadgeHtml}
                 ${photoBadgeHtml}
@@ -3530,7 +3693,10 @@ ISTRUZIONI PER LA RISPOSTA:
       if (dateInput) dateInput.value = toDatetimeLocalValue(initialDate);
       if (weatherInput) weatherInput.value = '';
       if (locationInput) locationInput.value = '';
-      if (folderInput) folderInput.value = '';
+      // Precompila con la Cartella Fissa se attiva
+      if (folderInput) {
+        folderInput.value = (this.isStickyFolderActive && this.stickyFolderName) ? this.stickyFolderName : '';
+      }
       this.editorAudio = null;
       deleteBtn?.classList.add('hidden');
 
@@ -3539,6 +3705,7 @@ ISTRUZIONI PER LA RISPOSTA:
     }
 
     this.updateEditorStarUI();
+    this.updateFolderStickyLockUI();
     this.editorPhotosExpanded = false;
     this.renderEditorPhotos();
     this.renderEditorAudio();
@@ -3555,6 +3722,71 @@ ISTRUZIONI PER LA RISPOSTA:
     }, 80);
 
     if (window.lucide) lucide.createIcons();
+  }
+
+  toggleFolderStickyLock() {
+    this.isStickyFolderActive = !this.isStickyFolderActive;
+    localStorage.setItem('massinote_sticky_folder_active', String(this.isStickyFolderActive));
+    const folderInput = document.getElementById('editor-folder');
+    if (folderInput) {
+      this.stickyFolderName = folderInput.value.trim();
+      localStorage.setItem('massinote_sticky_folder_name', this.stickyFolderName);
+    }
+    this.updateFolderStickyLockUI();
+    if (this.isStickyFolderActive) {
+      this.showToast(this.stickyFolderName ? `Cartella fissa attiva: "${this.stickyFolderName}" (applicata alle nuove note)` : 'Cartella fissa attiva per le note successive', 'success');
+    } else {
+      this.showToast('Cartella fissa disattivata', 'info');
+    }
+  }
+
+  onEditorFolderInput(val) {
+    if (this.isStickyFolderActive) {
+      this.stickyFolderName = (val || '').trim();
+      localStorage.setItem('massinote_sticky_folder_name', this.stickyFolderName);
+    }
+  }
+
+  updateFolderStickyLockUI() {
+    const btn = document.getElementById('editor-folder-lock-btn');
+    const icon = document.getElementById('editor-folder-lock-icon');
+    if (!btn) return;
+
+    if (this.isStickyFolderActive) {
+      btn.className = 'absolute right-1.5 p-1 rounded-lg text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-400 transition-all cursor-pointer';
+      btn.title = 'Cartella fissa ATTIVA (le nuove note useranno questa cartella). Clicca per disattivare';
+      if (icon) {
+        icon.className = 'w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-pulse';
+      }
+    } else {
+      btn.className = 'absolute right-1.5 p-1 rounded-lg text-slate-400 hover:text-indigo-600 transition-all cursor-pointer';
+      btn.title = 'Blocca/Memorizza questa cartella per le note successive';
+      if (icon) {
+        icon.className = 'w-3.5 h-3.5 text-slate-400';
+      }
+    }
+    if (window.lucide) lucide.createIcons();
+  }
+
+  exportCurrentEditorNoteToPdf() {
+    const title = document.getElementById('editor-title')?.value || '';
+    const content = document.getElementById('editor-content')?.value || '';
+    const dateVal = document.getElementById('editor-datetime-input')?.value || '';
+    const weather = document.getElementById('editor-weather')?.value || '';
+    const location = document.getElementById('editor-location')?.value || '';
+    const folder = document.getElementById('editor-folder')?.value || '';
+
+    const tempNote = {
+      title,
+      content,
+      date: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
+      weather,
+      location,
+      folder,
+      photos: this.editorPhotos || []
+    };
+
+    this._generateAndPrintPdf(tempNote);
   }
 
   toggleEditorStarred() {
