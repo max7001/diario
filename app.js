@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.33';
+const APP_VERSION = '2.34';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -395,6 +395,24 @@ class FirebaseStorageManager {
     }
 
     return this.unsubscribeListener;
+  }
+
+  async fetchLatestNotes() {
+    const col = this.getNotesCollection();
+    if (!col) return null;
+    try {
+      const snapshot = await col.get();
+      const notes = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        notes.push({ id: doc.id, ...data });
+      });
+      notes.sort((a, b) => new Date(b.date) - new Date(a.date));
+      return notes;
+    } catch (err) {
+      console.warn('Errore recupero note Firestore:', err);
+      return null;
+    }
   }
 
   async prepareNoteForCloud(note) {
@@ -1273,11 +1291,34 @@ class AppController {
   }
 
   async mergeCloudNotes(cloudNotes) {
-    if (!Array.isArray(cloudNotes) || cloudNotes.length === 0) return;
+    if (!Array.isArray(cloudNotes)) return;
     
-    // Costruisci mappa delle note locali
-    const localMap = new Map(this.notes.map(n => [String(n.id), n]));
+    const cloudIds = new Set(cloudNotes.map(n => String(n.id)));
+    const now = Date.now();
     let hasChanges = false;
+    let deletedFromLocal = false;
+
+    // 1. Rimuovi le note locali non più presenti nel cloud (eliminate da un altro device o dall'APK)
+    const filteredLocal = [];
+    for (const localNote of this.notes) {
+      const noteId = String(localNote.id);
+      if (!cloudIds.has(noteId)) {
+        // Se la nota è stata creata da più di 15 secondi ed è assente nel cloud, è stata eliminata altrove
+        const noteCreated = new Date(localNote.createdAt || localNote.date || 0).getTime();
+        if (now - noteCreated > 15000) {
+          await this.db.delete(localNote.id);
+          deletedFromLocal = true;
+          hasChanges = true;
+        } else {
+          filteredLocal.push(localNote);
+        }
+      } else {
+        filteredLocal.push(localNote);
+      }
+    }
+
+    // 2. Mappa delle note locali filtrate
+    const localMap = new Map(filteredLocal.map(n => [String(n.id), n]));
 
     for (const rawCn of cloudNotes) {
       if (!rawCn || !rawCn.id) continue;
@@ -1308,7 +1349,7 @@ class AppController {
       }
     }
 
-    if (hasChanges || this.notes.length !== localMap.size) {
+    if (hasChanges || this.notes.length !== localMap.size || deletedFromLocal) {
       this.notes = Array.from(localMap.values()).map(n => this.sanitizeNote(n)).filter(Boolean);
       this.sortNotes();
       // Renderizza immediatamente a schermo per la massima reattività
@@ -1316,6 +1357,110 @@ class AppController {
       this.updateStorageStats();
       // Persisti in IndexedDB in background
       this.db.putBatch(this.notes).catch(e => console.warn('DB merge batch warning:', e));
+    }
+  }
+
+  // --- RISINCRONIZZAZIONE MANUALE CON IL CLOUD (ALLINEAMENTO NOTE E CANCELLAZIONI DA ALTRI DEVICE/APK) ---
+  async handleManualCloudSync(e) {
+    if (e) {
+      try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+    }
+    if (this._isManualSyncing) return;
+    this._isManualSyncing = true;
+
+    try {
+      this.setCloudStatus('syncing', 'Sincronizzo...');
+      this.showToast('Risincronizzazione con il database Cloud in corso...', 'info');
+
+      const fbOnline = await this.firebase.init();
+      if (!fbOnline) {
+        this.setCloudStatus('offline', 'Offline (Locale)');
+        this.showToast('Cloud non raggiungibile: opero in modalità offline locale', 'warning');
+        return;
+      }
+
+      const cloudNotes = await this.firebase.fetchLatestNotes();
+      if (cloudNotes === null) {
+        this.setCloudStatus('offline', 'Errore Sinc');
+        this.showToast('Errore durante il recupero dei dati dal Cloud', 'error');
+        return;
+      }
+
+      const cloudIds = new Set(cloudNotes.map(n => String(n.id)));
+      let deletedCount = 0;
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      // Elimina da IndexedDB le note non più presenti su Firestore (eliminate da altro device o dall'APP Diario APK)
+      const keptLocal = [];
+      for (const localNote of this.notes) {
+        const idStr = String(localNote.id);
+        if (!cloudIds.has(idStr)) {
+          await this.db.delete(localNote.id);
+          deletedCount++;
+        } else {
+          keptLocal.push(localNote);
+        }
+      }
+
+      // Unisci con i dati più recenti di Firestore
+      const localMap = new Map(keptLocal.map(n => [String(n.id), n]));
+
+      for (const rawCn of cloudNotes) {
+        const cn = this.sanitizeNote(rawCn);
+        if (!cn || !cn.id) continue;
+        const noteId = String(cn.id);
+        const local = localMap.get(noteId);
+
+        if (!local) {
+          localMap.set(noteId, cn);
+          addedCount++;
+        } else {
+          const localUpdated = new Date(local.updatedAt || local.date || 0).getTime();
+          const cloudUpdated = new Date(cn.updatedAt || cn.date || 0).getTime();
+          const merged = {
+            ...cn,
+            photos: (cn.photos && cn.photos.length > 0) ? cn.photos : (local.photos || []),
+            audio: cn.audio || local.audio || null,
+            locked: (cn.locked !== undefined) ? cn.locked : (local.locked || false)
+          };
+          localMap.set(noteId, this.sanitizeNote(merged));
+          if (cloudUpdated > localUpdated) {
+            updatedCount++;
+          }
+        }
+      }
+
+      this.notes = Array.from(localMap.values()).map(n => this.sanitizeNote(n)).filter(Boolean);
+      this.sortNotes();
+
+      // Salva stato sincronizzato su DB locale
+      await this.db.clear();
+      await this.db.putBatch(this.notes);
+
+      this.setCloudStatus('online', 'Sincronizzato');
+      this.render();
+      this.updateStorageStats();
+
+      let summary = 'Sincronizzazione completata: ';
+      const details = [];
+      if (deletedCount > 0) details.push(`${deletedCount} ${deletedCount === 1 ? 'nota eliminata' : 'note eliminate'}`);
+      if (addedCount > 0) details.push(`${addedCount} ${addedCount === 1 ? 'nuova nota scaricata' : 'nuove note scaricate'}`);
+      if (updatedCount > 0) details.push(`${updatedCount} ${updatedCount === 1 ? 'aggiornata' : 'aggiornate'}`);
+
+      if (details.length === 0) {
+        summary += `${this.notes.length} note allineate con il Cloud`;
+      } else {
+        summary += details.join(', ');
+      }
+
+      this.showToast(summary, 'success');
+    } catch (err) {
+      console.error('Errore sincronizzazione manuale:', err);
+      this.setCloudStatus('offline', 'Errore Sinc');
+      this.showToast('Errore durante la sincronizzazione con il Cloud', 'error');
+    } finally {
+      this._isManualSyncing = false;
     }
   }
 

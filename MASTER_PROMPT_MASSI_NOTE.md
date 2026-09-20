@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.33)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.34)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.33), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.34), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet).
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -38,11 +38,15 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - L'apertura della nota o l'esportazione richiede il PIN di sicurezza `1804` (verificato tramite hash crittografico SHA-256 nella modale `#note-pin-modal`).
 
 ======================================================================
-3. MOTORE DI PERSISTENZA IBRIDO, CATEGORIE & NOTE "DA LAVORARE" (STELLA)
+3. MOTORE DI PERSISTENZA IBRIDO, RISINCRONIZZAZIONE CLOUD & "DA LAVORARE" (STELLA)
 ======================================================================
 - Architettura a Doppio Livello:
   - Motore primario su `IndexedDB` (Database `NotesDiaroDB`, Store `notes`) ad alte prestazioni.
   - Motore di fallback trasparente su `LocalStorage` (`massinote_offline_notes_v1`).
+- Tasto / Badge "Sincronizzato" Cliccabile (Risincronizzazione Completa):
+  - Posizionato accanto al titolo nell'header superiore (`#cloud-status-badge`).
+  - Cliccandolo, avvia una risincronizzazione autoritativa con il database Firebase Firestore (`fetchLatestNotes()`), allineando istantaneamente tutte le note e cancellando dal database locale IndexedDB le note che sono state eliminate da un altro dispositivo (es. altra sessione WebApp o app Android APK Diario).
+  - Mostra un feedback Toast con il resoconto preciso delle note eliminate, aggiunte o aggiornate.
 - Funzione Stella "Da Lavorare" (In cima alla lista & Filtro Dedicato):
   - **Barra Superiore**: Tasto Filtro Stella accanto al tasto AI nella barra di ricerca. Cliccandolo, filtra istantaneamente l'elenco mostrando solo le note con la stella attiva. Se nessuna nota ha la stella, mostra un banner informativo dedicato con tasto "Mostra tutte".
   - **Card Nota**: Tasto Stella accanto al tasto Condividi. Se attivato (`note.starred = true` / `note.pinned = true`), la stella si illumina in ambra e la nota viene posta con priorità assoluta in cima alla lista.

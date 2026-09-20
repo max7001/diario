@@ -63,11 +63,17 @@
         <div>
           <div class="flex items-center gap-2">
             <h1 class="font-bold text-lg leading-tight tracking-tight text-slate-900 dark:text-white">MassiNote</h1>
-            <!-- Cloud Status Indicator -->
-            <span id="cloud-status-badge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50" title="Firebase Cloud Sync Attivo">
+            <!-- Cloud Status Indicator (Tocca per risincronizzare) -->
+            <button 
+              id="cloud-status-badge" 
+              type="button"
+              onclick="app.handleManualCloudSync(event)"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50 cursor-pointer active:scale-95 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-all select-none" 
+              title="Tocca per risincronizzare le note dal Cloud ed eliminare quelle cancellate da altri dispositivi o dall'APP Diario (APK)"
+            >
               <span id="cloud-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              <span id="cloud-status-text">Cloud</span>
-            </span>
+              <span id="cloud-status-text">Sincronizzato</span>
+            </button>
           </div>
           <p id="header-subtitle" class="text-xs text-slate-500 dark:text-slate-400 font-medium">I tuoi appunti personali</p>
         </div>
@@ -546,7 +552,7 @@
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.33</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.34</span>
         </p>
       </div>
 
