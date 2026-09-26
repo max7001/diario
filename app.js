@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.36';
+const APP_VERSION = '2.37';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -2757,6 +2757,60 @@ ISTRUZIONI PER LA RISPOSTA:
     }
   }
 
+  // Helper per generare il badge meteo con SOLO icona e temperatura (senza testo descrittivo)
+  getWeatherBadgeHtml(weatherStr, isStarred = false) {
+    if (isStarred || !weatherStr || !String(weatherStr).trim()) return '';
+    const raw = String(weatherStr).trim();
+    const rawLower = raw.toLowerCase();
+
+    // 1. Estrai temperatura numerica (es. 28.1°C, -2°C, 25°C)
+    const tempMatch = raw.match(/(-?\d+(?:[.,]\d+)?)\s*°?\s*c?/i);
+    let tempText = '';
+    if (tempMatch) {
+      const tempVal = tempMatch[1].replace(',', '.');
+      tempText = `${tempVal}°C`;
+    } else {
+      tempText = raw;
+    }
+
+    // 2. Determina icona, colore e badge in base alle condizioni meteo:
+    // - Sole (soleggiato / sereno): sun
+    // - Nuvoletta (più o meno nuvoloso / coperto): cloud
+    // - Nuvoletta con pioggia (pioggia / rovesci): cloud-rain
+    // - Fiocco di neve (neve / nevischio): snowflake
+    // - Fulmine (forte temporale / tempesta): cloud-lightning
+    let icon = 'sun';
+    let iconColor = 'text-amber-500';
+    let badgeClass = 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50';
+
+    if (rawLower.includes('temporale') || rawLower.includes('fulmin') || rawLower.includes('tuon') || rawLower.includes('tempesta') || rawLower.includes('storm') || rawLower.includes('lightning') || rawLower.includes('grandine')) {
+      icon = 'cloud-lightning';
+      iconColor = 'text-amber-500';
+      badgeClass = 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50';
+    } else if (rawLower.includes('neve') || rawLower.includes('nevischio') || rawLower.includes('snow') || rawLower.includes('sleet') || rawLower.includes('gelo') || rawLower.includes('ghiaccio') || rawLower.includes('blizzard') || rawLower.includes('gragnola')) {
+      icon = 'snowflake';
+      iconColor = 'text-sky-500';
+      badgeClass = 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-900/50';
+    } else if (rawLower.includes('pioggia') || rawLower.includes('pioggerell') || rawLower.includes('rovesc') || rawLower.includes('acquerugiola') || rawLower.includes('drizzle') || rawLower.includes('rain') || rawLower.includes('shower') || rawLower.includes('precipitazion')) {
+      icon = 'cloud-rain';
+      iconColor = 'text-blue-500';
+      badgeClass = 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50';
+    } else if (rawLower.includes('nuvol') || rawLower.includes('coperto') || rawLower.includes('nebbia') || rawLower.includes('foschia') || rawLower.includes('cloud') || rawLower.includes('overcast') || rawLower.includes('fog') || rawLower.includes('nubi')) {
+      icon = 'cloud';
+      iconColor = 'text-slate-500 dark:text-slate-400';
+      badgeClass = 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/60';
+    } else {
+      icon = 'sun';
+      iconColor = 'text-amber-500';
+      badgeClass = 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50';
+    }
+
+    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${badgeClass}" title="${escapeHtml(raw)}">
+      <i data-lucide="${icon}" class="w-3.5 h-3.5 ${iconColor} shrink-0"></i>
+      <span>${escapeHtml(tempText)}</span>
+    </span>`;
+  }
+
   renderNotesList() {
     const grid = document.getElementById('notes-grid');
     const emptyState = document.getElementById('empty-state');
@@ -2857,21 +2911,8 @@ ISTRUZIONI PER LA RISPOSTA:
 
       const isStarred = Boolean(note.starred || note.pinned);
 
-      // Badge Meteo (nascosto se la nota è con stella Da Lavorare per compattare)
-      const weatherBadgeHtml = (!isStarred && note.weather)
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
-             <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i>
-             <span>${escapeHtml(note.weather)}</span>
-           </span>`
-        : '';
-
-      // Badge Luogo
-      const locationBadgeHtml = note.location
-        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 max-w-[150px] truncate" title="${escapeHtml(note.location)}">
-             <i data-lucide="map-pin" class="w-3 h-3 text-emerald-500 shrink-0"></i>
-             <span class="truncate">${escapeHtml(note.location)}</span>
-           </span>`
-        : '';
+      // Badge Meteo (Solo icona e temperatura; nascosto se la nota è con stella Da Lavorare per compattare)
+      const weatherBadgeHtml = this.getWeatherBadgeHtml(note.weather, isStarred);
 
       // Badge Cartella
       const folderBadgeHtml = note.folder
@@ -2941,7 +2982,6 @@ ISTRUZIONI PER LA RISPOSTA:
           <!-- Footer Card: Metadati e Azioni Veloci -->
           <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 text-xs">
             <div class="flex items-center gap-1.5 flex-wrap max-w-[50%] sm:max-w-[60%]">
-              ${locationBadgeHtml}
               ${folderBadgeHtml}
             </div>
 
@@ -3423,7 +3463,7 @@ ISTRUZIONI PER LA RISPOSTA:
             <div class="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400 mb-0.5">
               <span>${timeStr}</span>
               ${hasPhotos ? `<span class="text-pink-500 text-[11px] font-bold flex items-center gap-0.5"><i data-lucide="camera" class="w-3 h-3"></i> ${n.photos.length}</span>` : ''}
-              ${n.weather ? `<span class="text-amber-500 text-[11px] font-medium">${n.weather}</span>` : ''}
+              ${this.getWeatherBadgeHtml(n.weather)}
             </div>
             <h4 class="font-bold text-sm text-slate-900 dark:text-white truncate">${escapeHtml(n.title || 'Senza Titolo')}</h4>
             <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">${escapeHtml(n.content || '')}</p>

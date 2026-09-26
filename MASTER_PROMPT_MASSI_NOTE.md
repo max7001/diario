@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.36)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.37)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e parità assoluta con la versione Android (APK Diario) e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.36), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet), trasposizione esatta e sincronizzata della versione nativa Android.
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.37), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet), trasposizione esatta e sincronizzata della versione nativa Android.
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -61,8 +61,14 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
   - Tasto Clessidra (`data-lucide="hourglass"`) per bloccare/memorizzare la categoria fissa per le note successive.
 - Protezione Categoria su Note Vocali:
   - L'inserimento o generazione di note vocali (da hold-to-record o AI) non modifica né sovrascrive mai la categoria in 'Vocali', rispettando la categoria fissa attiva o lasciando il campo categoria personalizzabile.
-- Protezione Anti-Click / Debounce Tasto "+" e Banner Registrazione:
-  - Blocco di sicurezza da 900ms-1000ms (`_ignoreClickUntil` e `lastVoiceRecordingEndTime`) per prevenire aperture o tocchi accidentali di note sottostanti allo stop della registrazione vocale.
+- Card Nota nella Schermata Principale (Senza Posizione e con Meteo Essenziale Icona + Temperatura):
+  - La posizione geografica NON viene visualizzata nei riquadri delle note nella schermata principale per un layout più pulito e ordinato.
+  - L'indicazione meteo (`getWeatherBadgeHtml`) mostra ESCLUSIVAMENTE il simbolo e la temperatura numerica (es. `24.5°C`), senza testo descrittivo:
+    - **Sole (`sun`)**: soleggiato, sereno.
+    - **Nuvoletta (`cloud`)**: poco nuvoloso, nuvoloso, coperto, nebbia.
+    - **Nuvoletta con pioggia (`cloud-rain`)**: pioggia, pioggerella, rovesci.
+    - **Fiocco di neve (`snowflake`)**: neve, nevischio, gelo.
+    - **Fulmine (`cloud-lightning`)**: forte temporale, tempesta, fulmini.
 
 ======================================================================
 4. STRUMENTI INTELLIGENZA ARTIFICIALE GEMINI (GEMINI 3.6 FLASH)
@@ -111,9 +117,9 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 7. STRUTTURA DELLE VISTE & NAVIGAZIONE
 ======================================================================
 5 viste principali:
-1. **VISTA NOTE (`#view-notes`)**: Barra di ricerca a riga unica con tasti AI e Filtro Stella, tendina Categorie con tasto PDF, card note compatte per note da lavorare.
-2. **VISTA CALENDARIO (`#view-calendar`)**: Griglia mensile con indicatore note del giorno.
+1. **VISTA NOTE (`#view-notes`)**: Barra di ricerca a riga unica con tasti AI e Filtro Stella, tendina Categorie con tasto PDF, card note pulite (senza posizione e con meteo a icona + temperatura), card compatte per note da lavorare.
+2. **VISTA CALENDARIO (`#view-calendar`)**: Griglia mensile con indicatore note del giorno e meteo compatto.
 3. **VISTA STATISTICHE (`#view-stats`)**: KPI, spazio occupato, token AI, Località frequenti formattate `Stato - Città`, sezioni comprimibili e mappa geografica interattiva.
-4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Card Tema Giorno/Notte compatta, Backup, Ripristino, Eliminazione totale, Badge Versione 2.36.
+4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Card Tema Giorno/Notte compatta, Backup, Ripristino, Eliminazione totale, Badge Versione 2.37.
 5. **VISTA EDITOR NOTA (`#view-editor`)**: Tasto Salva, Annulla, Allega Foto, Registra Voce, Tasto AI Riorganizza Testo, Tasto AI Riassumi Audio, Toolbar formattazione (B, -, Orologio, PDF, Stella), Campo Categoria con autocompletamento e Clessidra Cartella Fissa.
 ```
