@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.34';
+const APP_VERSION = '2.35';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -397,24 +397,6 @@ class FirebaseStorageManager {
     return this.unsubscribeListener;
   }
 
-  async fetchLatestNotes() {
-    const col = this.getNotesCollection();
-    if (!col) return null;
-    try {
-      const snapshot = await col.get();
-      const notes = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        notes.push({ id: doc.id, ...data });
-      });
-      notes.sort((a, b) => new Date(b.date) - new Date(a.date));
-      return notes;
-    } catch (err) {
-      console.warn('Errore recupero note Firestore:', err);
-      return null;
-    }
-  }
-
   async prepareNoteForCloud(note) {
     if (!note) return null;
     const cleanNote = { ...note };
@@ -473,34 +455,66 @@ class FirebaseStorageManager {
     }
   }
 
-  async deleteNote(id) {
+  async fetchLatestNotes() {
     const col = this.getNotesCollection();
-    if (!col) return;
+    if (!col) return null;
     try {
-      await col.doc(id).delete();
+      const snap = await col.get();
+      const notes = [];
+      snap.forEach((doc) => {
+        notes.push({ id: doc.id, ...doc.data() });
+      });
+      return notes;
+    } catch (e) {
+      console.warn('Errore fetchLatestNotes:', e);
+      return null;
+    }
+  }
+
+  async deleteNote(id) {
+    if (!id) return false;
+    const docId = String(id);
+    const col = this.getNotesCollection();
+    if (!col) {
+      console.warn('Firebase non pronto durante deleteNote:', docId);
+      return false;
+    }
+    try {
+      await col.doc(docId).delete();
+      console.log('Nota eliminata con successo su Cloud Firestore:', docId);
+      return true;
     } catch (e) {
       console.warn('Avviso eliminazione Firebase:', e);
+      return false;
     }
   }
 
   async saveBatch(notes) {
     if (!this.db || !notes || notes.length === 0) return;
     try {
+      const deletedIds = (window.app && typeof window.app.getDeletedNoteIds === 'function')
+        ? window.app.getDeletedNoteIds()
+        : new Set();
+
       const BATCH_SIZE = 40;
       for (let i = 0; i < notes.length; i += BATCH_SIZE) {
         const chunk = notes.slice(i, i + BATCH_SIZE);
         const batch = this.db.batch();
         const col = this.getNotesCollection();
+        let ops = 0;
         for (const n of chunk) {
-          if (n && n.id) {
+          if (n && n.id && !deletedIds.has(String(n.id))) {
             const cleanNote = await this.prepareNoteForCloud(n);
-            if (cleanNote) {
-              const ref = col.doc(cleanNote.id);
+            if (cleanNote && cleanNote.id) {
+              const ref = col.doc(String(cleanNote.id));
               batch.set(ref, cleanNote, { merge: true });
+              ops++;
             }
           }
         }
-        await batch.commit();
+        if (ops > 0) {
+          await batch.commit();
+        }
       }
     } catch (e) {
       console.warn('Avviso batch Firebase (salvato regolarmente in IndexedDB):', e);
@@ -1005,6 +1019,13 @@ class AppController {
   }
 
   async init() {
+    // 0. Controllo immediato Schermata di Blocco PIN (memorizzazione 2 mesi / 60 giorni)
+    try {
+      this.initLockScreen();
+    } catch (lockErr) {
+      console.warn('Avviso lock screen iniziale:', lockErr);
+    }
+
     // 1. Inizializzazione archivio locale (IndexedDB con fallback automatico su LocalStorage)
     try {
       await this.db.init();
@@ -1037,6 +1058,9 @@ class AppController {
       const fbOnline = await this.firebase.init();
 
       if (fbOnline) {
+        // Flusha subito le eliminazioni pendenti prima di elaborare le note
+        await this.flushPendingDeletions();
+
         // Sottoscrizione alle modifiche in tempo reale da Firestore con unione intelligente
         this.firebase.subscribeNotes(
           async (cloudNotes) => {
@@ -1044,7 +1068,11 @@ class AppController {
               if (cloudNotes && cloudNotes.length > 0) {
                 await this.mergeCloudNotes(cloudNotes);
               } else if (this.notes.length > 0) {
-                this.firebase.saveBatch(this.notes).catch(e => console.warn('Sync initial batch warning:', e));
+                const deletedIds = this.getDeletedNoteIds();
+                const notesToSave = this.notes.filter(n => n && n.id && !deletedIds.has(String(n.id)));
+                if (notesToSave.length > 0) {
+                  this.firebase.saveBatch(notesToSave).catch(e => console.warn('Sync initial batch warning:', e));
+                }
               }
             } catch (mergeErr) {
               console.warn('Avviso merge cloud notes:', mergeErr);
@@ -1066,7 +1094,7 @@ class AppController {
       this.setCloudStatus('offline', 'Offline (Locale)');
     }
 
-    // 5. Inizializzazione Schermata di Blocco PIN (con scadenza 3 ore)
+    // 5. Verifica stato lock screen
     try {
       this.initLockScreen();
     } catch (lockErr) {
@@ -1079,16 +1107,26 @@ class AppController {
     }
   }
 
-  // --- GESTIONE BLOCCO CON PIN (PROTETTO DA HASH SHA-256 CRITTOGRAFATO CON MEMORIZZAZIONE DISPOSITIVO) ---
+  // --- GESTIONE BLOCCO CON PIN (MEMORIZZAZIONE DISPOSITIVO PER ALMENO 2 MESI / 60 GIORNI) ---
   initLockScreen() {
     const lockScreen = document.getElementById('lock-screen');
     const pinInput = document.getElementById('lock-pin-input');
     const savedDeviceAuthToken = localStorage.getItem('massinote_device_auth_token');
+    const authExpiresAt = parseInt(localStorage.getItem('massinote_auth_expires_at') || '0', 10);
+    const now = Date.now();
 
     // Se il dispositivo è già stato autenticato e possiede il token crittografato valido
     if (savedDeviceAuthToken && savedDeviceAuthToken === _0xSEC_DEVICE_AUTH_HASH) {
-      lockScreen?.classList.add('hidden');
-      return;
+      let exp = authExpiresAt;
+      if (!exp) {
+        // Se non c'era scadenza impostata, imposta 60 giorni a partire da adesso
+        exp = now + (60 * 24 * 60 * 60 * 1000);
+        localStorage.setItem('massinote_auth_expires_at', exp.toString());
+      }
+      if (now < exp) {
+        lockScreen?.classList.add('hidden');
+        return;
+      }
     }
 
     lockScreen?.classList.remove('hidden');
@@ -1102,7 +1140,9 @@ class AppController {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           const currentToken = localStorage.getItem('massinote_device_auth_token');
-          if (!currentToken || currentToken !== _0xSEC_DEVICE_AUTH_HASH) {
+          const currentExp = parseInt(localStorage.getItem('massinote_auth_expires_at') || '0', 10);
+          const currentTime = Date.now();
+          if (!currentToken || currentToken !== _0xSEC_DEVICE_AUTH_HASH || !currentExp || currentTime >= currentExp) {
             const ls = document.getElementById('lock-screen');
             const pi = document.getElementById('lock-pin-input');
             ls?.classList.remove('hidden');
@@ -1156,8 +1196,10 @@ class AppController {
     const enteredHash = await calculateSha256(enteredPin);
 
     if (enteredHash === _0xSEC_PIN_HASH) {
-      // Memorizza il token di autorizzazione crittografato sul dispositivo in modo sicuro
+      // Memorizza il token di autorizzazione crittografato sul dispositivo per almeno 2 mesi (60 giorni)
+      const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
       localStorage.setItem('massinote_device_auth_token', _0xSEC_DEVICE_AUTH_HASH);
+      localStorage.setItem('massinote_auth_expires_at', (Date.now() + sixtyDaysMs).toString());
       localStorage.setItem('massinote_last_unlock', Date.now().toString());
       if (errorMsg) errorMsg.classList.add('hidden');
       
@@ -1211,16 +1253,23 @@ class AppController {
   // --- TEMA CHIARO / SCURO ---
   initTheme() {
     const savedTheme = localStorage.getItem('notes_theme');
-    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (isDark) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
+    }
+    if (window.AndroidBridge && typeof window.AndroidBridge.onThemeChanged === 'function') {
+      window.AndroidBridge.onThemeChanged(isDark);
     }
   }
 
   toggleTheme() {
     const isDark = document.documentElement.classList.toggle('dark');
     localStorage.setItem('notes_theme', isDark ? 'dark' : 'light');
+    if (window.AndroidBridge && typeof window.AndroidBridge.onThemeChanged === 'function') {
+      window.AndroidBridge.onThemeChanged(isDark);
+    }
     if (window.lucide) lucide.createIcons();
   }
 
@@ -1290,37 +1339,96 @@ class AppController {
     };
   }
 
+  // Gestione ID note eliminate persistenti per garantire sincronizzazione cloud
+  getDeletedNoteIds() {
+    try {
+      const data = localStorage.getItem('massinote_deleted_ids');
+      return new Set(data ? JSON.parse(data) : []);
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  addDeletedNoteId(id) {
+    if (!id) return;
+    try {
+      const s = this.getDeletedNoteIds();
+      s.add(String(id));
+      localStorage.setItem('massinote_deleted_ids', JSON.stringify(Array.from(s)));
+    } catch (_) {}
+  }
+
+  removeDeletedNoteId(id) {
+    if (!id) return;
+    try {
+      const s = this.getDeletedNoteIds();
+      s.delete(String(id));
+      localStorage.setItem('massinote_deleted_ids', JSON.stringify(Array.from(s)));
+    } catch (_) {}
+  }
+
+  async flushPendingDeletions() {
+    const deletedIds = this.getDeletedNoteIds();
+    if (!deletedIds.size || !this.firebase) return;
+    for (const id of deletedIds) {
+      try {
+        await this.firebase.deleteNote(id);
+      } catch (e) {
+        console.warn('Riprovo eliminazione pendente fallita:', id, e);
+      }
+    }
+  }
+
   async mergeCloudNotes(cloudNotes) {
     if (!Array.isArray(cloudNotes)) return;
     
-    const cloudIds = new Set(cloudNotes.map(n => String(n.id)));
-    const now = Date.now();
-    let hasChanges = false;
-    let deletedFromLocal = false;
+    const deletedIds = this.getDeletedNoteIds();
 
-    // 1. Rimuovi le note locali non più presenti nel cloud (eliminate da un altro device o dall'APK)
-    const filteredLocal = [];
-    for (const localNote of this.notes) {
-      const noteId = String(localNote.id);
-      if (!cloudIds.has(noteId)) {
-        // Se la nota è stata creata da più di 15 secondi ed è assente nel cloud, è stata eliminata altrove
-        const noteCreated = new Date(localNote.createdAt || localNote.date || 0).getTime();
-        if (now - noteCreated > 15000) {
-          await this.db.delete(localNote.id);
-          deletedFromLocal = true;
-          hasChanges = true;
-        } else {
-          filteredLocal.push(localNote);
-        }
-      } else {
-        filteredLocal.push(localNote);
+    // 1. Assicurati che qualsiasi nota eliminata localmente venga eliminata da Firestore se presente nello snapshot
+    for (const rawCn of cloudNotes) {
+      if (rawCn && rawCn.id && deletedIds.has(String(rawCn.id))) {
+        this.firebase.deleteNote(String(rawCn.id)).catch(() => {});
       }
     }
 
-    // 2. Mappa delle note locali filtrate
-    const localMap = new Map(filteredLocal.map(n => [String(n.id), n]));
+    // 2. Filtra lo snapshot cloud escludendo le note eliminate
+    const validCloudNotes = cloudNotes.filter(cn => cn && cn.id && !deletedIds.has(String(cn.id)));
+    const cloudIdSet = new Set(validCloudNotes.map(n => String(n.id)));
 
-    for (const rawCn of cloudNotes) {
+    // 3. Costruisci mappa delle note locali
+    const localMap = new Map(this.notes.map(n => [String(n.id), n]));
+    let hasChanges = false;
+
+    // Rimuovi localmente qualsiasi nota che è nell'elenco eliminazioni
+    for (const [localId] of localMap) {
+      if (deletedIds.has(localId)) {
+        localMap.delete(localId);
+        await this.db.delete(localId);
+        hasChanges = true;
+      }
+    }
+
+    // 4. SINCRONIZZAZIONE ELIMINAZIONI DAL CLOUD:
+    // Se lo snapshot cloud è arrivato, qualsiasi nota locale che NON esiste più nel cloud
+    // (a meno che non sia una bozza appena creata offline nell'ultimo minuto) significa che
+    // è STATA ELIMINATA sul cloud da un altro device o dalla webapp!
+    if (validCloudNotes.length > 0) {
+      for (const [localId, localNote] of localMap) {
+        if (!cloudIdSet.has(localId)) {
+          const isFreshDraft = localNote._isOfflineDraft === true;
+          if (!isFreshDraft) {
+            console.log('Nota rimossa da Firestore da altro dispositivo, elimino localmente:', localId);
+            localMap.delete(localId);
+            await this.db.delete(localId);
+            this.addDeletedNoteId(localId);
+            hasChanges = true;
+          }
+        }
+      }
+    }
+
+    // 5. Unisci le note valide dal cloud
+    for (const rawCn of validCloudNotes) {
       if (!rawCn || !rawCn.id) continue;
       const cn = this.sanitizeNote(rawCn);
       if (!cn) continue;
@@ -1349,7 +1457,7 @@ class AppController {
       }
     }
 
-    if (hasChanges || this.notes.length !== localMap.size || deletedFromLocal) {
+    if (hasChanges || this.notes.length !== localMap.size) {
       this.notes = Array.from(localMap.values()).map(n => this.sanitizeNote(n)).filter(Boolean);
       this.sortNotes();
       // Renderizza immediatamente a schermo per la massima reattività
@@ -1379,6 +1487,8 @@ class AppController {
         return;
       }
 
+      await this.flushPendingDeletions();
+
       const cloudNotes = await this.firebase.fetchLatestNotes();
       if (cloudNotes === null) {
         this.setCloudStatus('offline', 'Errore Sinc');
@@ -1386,75 +1496,9 @@ class AppController {
         return;
       }
 
-      const cloudIds = new Set(cloudNotes.map(n => String(n.id)));
-      let deletedCount = 0;
-      let addedCount = 0;
-      let updatedCount = 0;
-
-      // Elimina da IndexedDB le note non più presenti su Firestore (eliminate da altro device o dall'APP Diario APK)
-      const keptLocal = [];
-      for (const localNote of this.notes) {
-        const idStr = String(localNote.id);
-        if (!cloudIds.has(idStr)) {
-          await this.db.delete(localNote.id);
-          deletedCount++;
-        } else {
-          keptLocal.push(localNote);
-        }
-      }
-
-      // Unisci con i dati più recenti di Firestore
-      const localMap = new Map(keptLocal.map(n => [String(n.id), n]));
-
-      for (const rawCn of cloudNotes) {
-        const cn = this.sanitizeNote(rawCn);
-        if (!cn || !cn.id) continue;
-        const noteId = String(cn.id);
-        const local = localMap.get(noteId);
-
-        if (!local) {
-          localMap.set(noteId, cn);
-          addedCount++;
-        } else {
-          const localUpdated = new Date(local.updatedAt || local.date || 0).getTime();
-          const cloudUpdated = new Date(cn.updatedAt || cn.date || 0).getTime();
-          const merged = {
-            ...cn,
-            photos: (cn.photos && cn.photos.length > 0) ? cn.photos : (local.photos || []),
-            audio: cn.audio || local.audio || null,
-            locked: (cn.locked !== undefined) ? cn.locked : (local.locked || false)
-          };
-          localMap.set(noteId, this.sanitizeNote(merged));
-          if (cloudUpdated > localUpdated) {
-            updatedCount++;
-          }
-        }
-      }
-
-      this.notes = Array.from(localMap.values()).map(n => this.sanitizeNote(n)).filter(Boolean);
-      this.sortNotes();
-
-      // Salva stato sincronizzato su DB locale
-      await this.db.clear();
-      await this.db.putBatch(this.notes);
-
+      await this.mergeCloudNotes(cloudNotes);
       this.setCloudStatus('online', 'Sincronizzato');
-      this.render();
-      this.updateStorageStats();
-
-      let summary = 'Sincronizzazione completata: ';
-      const details = [];
-      if (deletedCount > 0) details.push(`${deletedCount} ${deletedCount === 1 ? 'nota eliminata' : 'note eliminate'}`);
-      if (addedCount > 0) details.push(`${addedCount} ${addedCount === 1 ? 'nuova nota scaricata' : 'nuove note scaricate'}`);
-      if (updatedCount > 0) details.push(`${updatedCount} ${updatedCount === 1 ? 'aggiornata' : 'aggiornate'}`);
-
-      if (details.length === 0) {
-        summary += `${this.notes.length} note allineate con il Cloud`;
-      } else {
-        summary += details.join(', ');
-      }
-
-      this.showToast(summary, 'success');
+      this.showToast(`Sincronizzazione completata: ${this.notes.length} note allineate`, 'success');
     } catch (err) {
       console.error('Errore sincronizzazione manuale:', err);
       this.setCloudStatus('offline', 'Errore Sinc');
@@ -1756,14 +1800,22 @@ class AppController {
     this.startVoiceRecording(true);
   }
 
-  stopVoiceRecording() {
+  stopVoiceRecording(e) {
+    if (e) {
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      } catch (_) {}
+    }
     if (!this.isRecording) return;
     this.isRecording = false;
     this.isLongPressRecording = false;
     this.lastVoiceRecordingEndTime = Date.now();
+    this._ignoreClickUntil = Date.now() + 1000;
     
     if (document.activeElement) {
-      try { document.activeElement.blur(); } catch (e) {}
+      try { document.activeElement.blur(); } catch (err) {}
     }
 
     // Suono acustico di fine registrazione
@@ -2802,8 +2854,10 @@ ISTRUZIONI PER LA RISPOSTA:
            </span>`
         : '';
 
-      // Badge Meteo
-      const weatherBadgeHtml = note.weather
+      const isStarred = Boolean(note.starred || note.pinned);
+
+      // Badge Meteo (nascosto se la nota è con stella Da Lavorare per compattare)
+      const weatherBadgeHtml = (!isStarred && note.weather)
         ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
              <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i>
              <span>${escapeHtml(note.weather)}</span>
@@ -2826,13 +2880,16 @@ ISTRUZIONI PER LA RISPOSTA:
            </span>`
         : '';
 
-      // Anteprima contenuto: mascherata se la nota è protetta da password
-      const contentPreviewHtml = isLocked
-        ? `<div class="mt-1.5 py-1.5 px-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50 flex items-center gap-2 text-xs font-semibold select-none">
-             <i data-lucide="shield-check" class="w-4 h-4 text-amber-500 shrink-0"></i>
-             <span>Contenuto protetto da password</span>
-           </div>`
-        : `<p class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-3 leading-relaxed">${escapeHtml(previewText)}</p>`;
+      // Anteprima contenuto: mascherata se protetta, nascosta se stella attiva per compattare
+      const contentPreviewHtml = isStarred
+        ? ''
+        : (isLocked
+            ? `<div class="mt-1.5 py-1.5 px-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50 flex items-center gap-2 text-xs font-semibold select-none">
+                 <i data-lucide="shield-check" class="w-4 h-4 text-amber-500 shrink-0"></i>
+                 <span>Contenuto protetto da password</span>
+               </div>`
+            : `<p class="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-3 leading-relaxed">${escapeHtml(previewText)}</p>`
+          );
 
       // Prima miniatura foto (se presente e non bloccata)
       const thumbnailHtml = (hasPhotos && note.photos[0])
@@ -2848,12 +2905,10 @@ ISTRUZIONI PER LA RISPOSTA:
           )
         : '';
 
-      const isStarred = Boolean(note.starred || note.pinned);
-
       return `
         <article 
           onclick="app.openNoteOrPromptPin('${safeId}')"
-          class="note-card bg-white dark:bg-slate-900 p-4 sm:p-4.5 rounded-2xl border ${isStarred ? 'border-amber-300 dark:border-amber-800/80 shadow-md ring-1 ring-amber-400/20' : 'border-slate-200 dark:border-slate-800 shadow-sm'} hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between gap-3 group relative"
+          class="note-card bg-white dark:bg-slate-900 ${isStarred ? 'p-3 sm:p-3.5 border-amber-300 dark:border-amber-800/80 shadow-md ring-1 ring-amber-400/20 gap-2' : 'p-4 sm:p-4.5 border-slate-200 dark:border-slate-800 shadow-sm gap-3'} rounded-2xl hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 cursor-pointer flex flex-col justify-between group relative"
         >
           <div>
             <!-- Header Card: Data + Badges -->
@@ -3104,6 +3159,10 @@ ISTRUZIONI PER LA RISPOSTA:
   }
 
   openNoteOrPromptPin(noteId) {
+    if (Date.now() < (this._ignoreClickUntil || 0) || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 900)) {
+      console.log('openNoteOrPromptPin bloccato per prevenire selezione accidentale durante stop registrazione');
+      return;
+    }
     const note = this.notes.find(n => n && String(n.id) === String(noteId));
     if (!note) return;
 
@@ -3792,7 +3851,7 @@ ISTRUZIONI PER LA RISPOSTA:
     }
 
     if (mapBadge) {
-      mapBadge.textContent = `${mappedCount} ${mappedCount === 1 ? 'Punto Mappato' : 'Punti Mappati'}`;
+      mapBadge.textContent = `${mappedCount} ${mappedCount === 1 ? 'Punto' : 'Punti'}`;
     }
 
     if (points.length > 0) {
@@ -3813,6 +3872,10 @@ ISTRUZIONI PER LA RISPOSTA:
 
   // --- EDITOR NOTA ---
   openEditor(noteId = null, defaultDate = null) {
+    if (Date.now() < (this._ignoreClickUntil || 0) || (Date.now() - (this.lastVoiceRecordingEndTime || 0) < 900)) {
+      console.log('openEditor bloccato per prevenire apertura accidentale durante stop registrazione');
+      return;
+    }
     try {
       this._lastOpenEditorTime = Date.now();
       this.editingNoteId = noteId;
@@ -4004,6 +4067,275 @@ ISTRUZIONI PER LA RISPOSTA:
         this.showToast('Registrazione vocale rimossa', 'info');
       }
     );
+  }
+
+  // --- ANALISI E RIASSUNTO NOTA VOCALE ALLEGATA ALL'EDITOR CON GEMINI AI ---
+  async summarizeEditorAudioWithAi() {
+    if (!this.editorAudio) {
+      this.showToast('Nessuna registrazione vocale da analizzare', 'warning');
+      return;
+    }
+
+    const aiBtn = document.getElementById('editor-audio-ai-btn');
+    const originalBtnHtml = aiBtn ? aiBtn.innerHTML : '';
+    if (aiBtn) {
+      aiBtn.disabled = true;
+      aiBtn.innerHTML = `<span class="animate-spin text-xs">⟳</span><span>Analisi...</span>`;
+    }
+
+    try {
+      let mimeType = 'audio/webm';
+      let base64Data = '';
+      if (typeof this.editorAudio === 'string' && this.editorAudio.startsWith('data:')) {
+        const parts = this.editorAudio.split(',');
+        const meta = parts[0];
+        base64Data = parts[1] || '';
+        const match = meta.match(/data:([^;]+);/);
+        if (match) mimeType = match[1];
+      } else if (typeof this.editorAudio === 'string') {
+        base64Data = this.editorAudio;
+      }
+
+      if (!base64Data) {
+        this.showToast('File audio non valido per l\'analisi', 'error');
+        return;
+      }
+
+      const apiKey = getDecryptedGeminiKey();
+      if (!apiKey) {
+        this.showToast('Chiave API Gemini non configurata', 'error');
+        return;
+      }
+
+      const promptText = `Sei un assistente personale intelligente per la gestione degli appunti in italiano.
+Ascolta attentamente questo file audio registrato dall'utente.
+Devi generare:
+1) "title": un titolo conciso, chiaro ed espressivo per la nota (massimo 7-8 parole).
+2) "summary": un testo ordinato, completo e ben strutturato che riassume ed espone chiaramente quanto detto nel file audio, formulato in lingua italiana e scritto come se fosse una nota redatta a mano. Se opportuno usa paragrafi o elenchi puntati.
+
+REGOLE DI FORMATTAZIONE OBBLIGATORIE:
+- NON usare MAI caratteri di formattazione markdown come asterischi ("*", "**", "***") né cancelletti ("#", "##", "###") né trattini bassi ("_").
+- Per gli elenchi puntati usa ESCLUSIVAMENTE il simbolo pallino "• " oppure numeri "1.", "2.".
+- Per evidenziare concetti o titoli di sezione usa parole in MAIUSCOLO oppure vai a capo con una riga vuota, SENZA mai usare asterischi o cancelletti.
+
+Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
+{
+  "title": "Titolo della nota",
+  "summary": "Riassunto e testo completo della nota"
+}`;
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              { text: promptText },
+              {
+                inline_data: {
+                  mime_type: mimeType.split(';')[0] || 'audio/webm',
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          response_mime_type: "application/json"
+        }
+      };
+
+      let aiTitle = '';
+      let aiSummary = '';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      let candidateText = '';
+      if (response.ok) {
+        const result = await response.json();
+        candidateText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const tokensUsed = result.usageMetadata?.totalTokenCount || Math.round(base64Data.length / 3);
+        this.addAiTokenUsage(tokensUsed);
+      } else {
+        console.warn('Tentativo con fallback gemini-3.5-flash per audio editor:', response.status);
+        const fbEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+        const fbRes = await fetch(fbEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        if (fbRes.ok) {
+          const fbResult = await fbRes.json();
+          candidateText = fbResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const fbTokensUsed = fbResult.usageMetadata?.totalTokenCount || Math.round(base64Data.length / 3);
+          this.addAiTokenUsage(fbTokensUsed);
+        }
+      }
+
+      if (candidateText) {
+        try {
+          const parsed = JSON.parse(candidateText);
+          if (parsed.title) {
+            aiTitle = typeof parsed.title === 'string' ? parsed.title : (parsed.title.title || JSON.stringify(parsed.title));
+          }
+          if (parsed.summary || parsed.content || parsed.text) {
+            const s = parsed.summary || parsed.content || parsed.text;
+            aiSummary = typeof s === 'string' ? s : JSON.stringify(s, null, 2);
+          } else {
+            aiSummary = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+          }
+        } catch (_) {
+          aiSummary = String(candidateText);
+        }
+      }
+
+      aiTitle = cleanAiFormatting(aiTitle || '');
+      aiSummary = cleanAiFormatting(aiSummary || '');
+
+      if (!aiSummary) {
+        this.showToast('Impossibile ottenere il riassunto dell\'audio. Riprova.', 'error');
+        return;
+      }
+
+      const titleInput = document.getElementById('editor-title');
+      if (titleInput && aiTitle) {
+        const curTitle = titleInput.value.trim();
+        if (!curTitle || curTitle === 'Senza Titolo' || curTitle === 'Nota Vocale') {
+          titleInput.value = aiTitle;
+        }
+      }
+
+      const contentInput = document.getElementById('editor-content');
+      if (contentInput) {
+        const curContent = contentInput.value.trim();
+        if (!curContent || curContent === 'Registrazione vocale allegata alla nota.') {
+          contentInput.value = aiSummary;
+        } else {
+          contentInput.value = curContent + '\n\n' + aiSummary;
+        }
+      }
+
+      this.onEditorContentChange();
+      this.adjustEditorTextareaHeight();
+      this.showToast('Nota vocale riassunta con successo!', 'success');
+    } catch (err) {
+      console.error('Errore summarizeEditorAudioWithAi:', err);
+      this.showToast('Errore durante l\'analisi AI dell\'audio', 'error');
+    } finally {
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = originalBtnHtml || `<i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>AI</span>`;
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+  }
+
+  // --- RIORGANIZZAZIONE E CORREZIONE TESTO NOTA CON GEMINI AI ---
+  async reorganizeNoteTextWithAi() {
+    const contentInput = document.getElementById('editor-content');
+    const currentText = (contentInput?.value || '').trim();
+
+    if (!currentText) {
+      this.showToast('Scrivi prima del testo nella nota per poterlo riorganizzare con l\'AI', 'warning');
+      return;
+    }
+
+    const aiBtn = document.getElementById('editor-ai-rewrite-btn');
+    const originalBtnHtml = aiBtn ? aiBtn.innerHTML : '';
+    if (aiBtn) {
+      aiBtn.disabled = true;
+      aiBtn.innerHTML = `<span class="animate-spin text-xs">⟳</span><span>AI...</span>`;
+    }
+
+    try {
+      const apiKey = getDecryptedGeminiKey();
+      if (!apiKey) {
+        this.showToast('Chiave API Gemini non trovata', 'error');
+        return;
+      }
+
+      const promptText = `Sei un assistente personale intelligente ed esperto di scrittura ed editing in italiano.
+Analizza con attenzione il seguente appunto/testo fornito dall'utente.
+
+TESTO ORIGINALE:
+"""
+${currentText}
+"""
+
+IL TUO COMPITO:
+1. Correggi qualsiasi errore grammaticale, ortografico, refuso o problema di sintassi.
+2. Riorganizza il testo in modo logico, chiaro, scorrevole ed elegante, mantenendo intatto al 100% il significato e tutte le informazioni (date, luoghi, nomi, dettagli).
+3. Se appropriato, suddividi il testo in paragrafi coerenti o usa elenchi puntati ordinati.
+
+REGOLE DI FORMATTAZIONE OBBLIGATORIE:
+- NON usare MAI caratteri di sintassi markdown come asterischi ("*", "**", "***") né cancelletti ("#", "##", "###") né trattini bassi ("_").
+- Per gli elenchi puntati usa ESCLUSIVAMENTE il simbolo pallino Unicode "• " oppure numeri "1.", "2.".
+- Per enfatizzare titoli o sezioni usa il MAIUSCOLO o vai a capo, MAI asterischi o cancelletti.
+- Rispondi ESCLUSIVAMENTE con il testo riscritto e riorganizzato, senza alcun commento introduttivo o conclusivo.`;
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const requestBody = {
+        contents: [
+          {
+            parts: [{ text: promptText }]
+          }
+        ]
+      };
+
+      let candidateText = '';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        candidateText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const tokensUsed = result.usageMetadata?.totalTokenCount || Math.round(promptText.length / 4);
+        this.addAiTokenUsage(tokensUsed);
+      } else {
+        console.warn('Fallback a gemini-3.5-flash per riorganizzazione testo:', response.status);
+        const fbEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+        const fbRes = await fetch(fbEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        if (fbRes.ok) {
+          const fbResult = await fbRes.json();
+          candidateText = fbResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const fbTokensUsed = fbResult.usageMetadata?.totalTokenCount || Math.round(promptText.length / 4);
+          this.addAiTokenUsage(fbTokensUsed);
+        }
+      }
+
+      if (!candidateText || !candidateText.trim()) {
+        this.showToast('Impossibile riorganizzare il testo con l\'AI. Riprova.', 'error');
+        return;
+      }
+
+      const reorganized = cleanAiFormatting(candidateText.trim());
+      if (contentInput) {
+        contentInput.value = reorganized;
+      }
+
+      this.onEditorContentChange();
+      this.adjustEditorTextareaHeight();
+      this.showToast('Testo corretto e riorganizzato con successo!', 'success');
+    } catch (err) {
+      console.error('Errore reorganizeNoteTextWithAi:', err);
+      this.showToast('Errore durante la riorganizzazione del testo', 'error');
+    } finally {
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = originalBtnHtml || `<i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>AI</span>`;
+        if (window.lucide) lucide.createIcons();
+      }
+    }
   }
 
   // --- RILEVAMENTO POSIZIONE GPS / CELLA / WI-FI & METEO ---
@@ -4466,22 +4798,30 @@ ISTRUZIONI PER LA RISPOSTA:
   // --- ELIMINAZIONE NOTA ---
   confirmDeleteNote(id) {
     if (!id) return;
-    const note = this.notes.find(n => n.id === id);
+    const strId = String(id);
+    const note = this.notes.find(n => String(n.id) === strId);
     this.openConfirmModal(
       'Elimina Nota',
       `Sei sicuro di voler eliminare la nota "${note?.title || 'selezionata'}"? L'azione non può essere annullata.`,
       async () => {
         try {
           this.setCloudStatus('syncing', 'Eliminazione...');
-          await this.db.delete(id);
+          this.addDeletedNoteId(strId);
+          await this.db.delete(strId);
           
-          const idx = this.notes.findIndex(n => n.id === id);
+          const idx = this.notes.findIndex(n => String(n.id) === strId);
           if (idx >= 0) this.notes.splice(idx, 1);
           
-          this.firebase.deleteNote(id).catch(e => console.warn('Delete Firebase warning:', e));
           this.render();
           this.updateStorageStats();
-          this.setCloudStatus('online', 'Sincronizzato');
+
+          // Elimina dal Cloud Firestore
+          const deletedOnCloud = await this.firebase.deleteNote(strId);
+          if (deletedOnCloud) {
+            this.setCloudStatus('online', 'Sincronizzato');
+          } else {
+            this.setCloudStatus('offline', 'Eliminata localmente');
+          }
           this.showToast('Nota eliminata con successo', 'info');
         } catch (e) {
           console.error('Errore eliminazione nota:', e);
@@ -4494,8 +4834,9 @@ ISTRUZIONI PER LA RISPOSTA:
   deleteCurrentNote() {
     const idToDelete = this.editingNoteId;
     if (!idToDelete) return;
+    const strId = String(idToDelete);
     
-    const note = this.notes.find(n => n.id === idToDelete);
+    const note = this.notes.find(n => String(n.id) === strId);
     this.openConfirmModal(
       'Elimina Nota',
       `Sei sicuro di voler eliminare la nota "${note?.title || 'selezionata'}"? L'azione non può essere annullata.`,
@@ -4503,15 +4844,22 @@ ISTRUZIONI PER LA RISPOSTA:
         try {
           this.setCloudStatus('syncing', 'Eliminazione...');
           this.closeEditor();
-          await this.db.delete(idToDelete);
+          this.addDeletedNoteId(strId);
+          await this.db.delete(strId);
           
-          const idx = this.notes.findIndex(n => n.id === idToDelete);
+          const idx = this.notes.findIndex(n => String(n.id) === strId);
           if (idx >= 0) this.notes.splice(idx, 1);
           
-          this.firebase.deleteNote(idToDelete).catch(e => console.warn('Delete Firebase warning:', e));
           this.render();
           this.updateStorageStats();
-          this.setCloudStatus('online', 'Sincronizzato');
+
+          // Elimina dal Cloud Firestore
+          const deletedOnCloud = await this.firebase.deleteNote(strId);
+          if (deletedOnCloud) {
+            this.setCloudStatus('online', 'Sincronizzato');
+          } else {
+            this.setCloudStatus('offline', 'Eliminata localmente');
+          }
           this.showToast('Nota eliminata con successo', 'info');
         } catch (e) {
           console.error('Errore eliminazione nota editor:', e);
@@ -5204,4 +5552,37 @@ function escapeHtml(str) {
 window.app = new AppController();
 document.addEventListener('DOMContentLoaded', () => {
   window.app.init();
+});
+
+
+// Auto sync trigger on reconnection for Android / PWA
+window.addEventListener('online', () => {
+  console.log('Riconnessione rilevata: sincronizzazione cloud in corso...');
+  if (window.app && window.app.firebase) {
+    window.app.setCloudStatus('syncing', 'Sincronizzazione...');
+    window.app.firebase.init().then(async online => {
+      if (online) {
+        if (typeof window.app.flushPendingDeletions === 'function') {
+          await window.app.flushPendingDeletions();
+        }
+        if (window.app.notes && window.app.notes.length > 0) {
+          const deletedIds = (typeof window.app.getDeletedNoteIds === 'function')
+            ? window.app.getDeletedNoteIds()
+            : new Set();
+          const cleanNotes = window.app.notes.filter(n => n && n.id && !deletedIds.has(String(n.id)));
+          if (cleanNotes.length > 0) {
+            window.app.firebase.saveBatch(cleanNotes)
+              .then(() => window.app.setCloudStatus('online', 'Sincronizzato'))
+              .catch(() => window.app.setCloudStatus('offline', 'Offline (Locale)'));
+          }
+        }
+      }
+    });
+  }
+});
+window.addEventListener('offline', () => {
+  console.log('Connessione persa: operatività offline attiva');
+  if (window.app) {
+    window.app.setCloudStatus('offline', 'Offline (Locale)');
+  }
 });

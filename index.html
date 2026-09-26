@@ -462,14 +462,14 @@
         </div>
       </div>
 
-      <!-- 4. Mappa Geografica delle Note (Mostra tutti i punti dove sono state inserite note) -->
+      <!-- 4. Mappa Geografica (Mostra tutti i punti dove sono state inserite note) -->
       <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2.5">
             <i data-lucide="map-pin" class="w-4 h-4 text-emerald-600"></i>
-            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Mappa Geografica delle Note</h3>
+            <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200">Mappa Geografica</h3>
           </div>
-          <span id="stat-map-count-badge" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900/50">0 Punti Mappati</span>
+          <span id="stat-map-count-badge" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-900/50">0 Punti</span>
         </div>
         <p class="text-xs text-slate-500 dark:text-slate-400">Visualizza tutti i luoghi in cui hai scritto o registrato le tue note.</p>
         <div id="stats-notes-map" class="w-full h-80 sm:h-96 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner z-0"></div>
@@ -485,27 +485,21 @@
         <span class="text-xs text-slate-400">MassiNote WebApp</span>
       </div>
 
-      <!-- 1. Aspetto e Tema (Modalità Giorno / Notte) -->
-      <div class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
+      <!-- 1. Aspetto e Tema (Modalità Giorno / Notte Compattata) -->
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
           <i data-lucide="palette" class="w-4 h-4 text-blue-500"></i>
-          <span>Tema & Aspetto</span>
-        </h3>
-        <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
-          <div>
-            <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">Modalità Giorno / Notte</span>
-            <span class="text-[11px] text-slate-500 dark:text-slate-400">Attiva o disattiva il tema scuro</span>
-          </div>
-          <button 
-            type="button" 
-            onclick="app.toggleTheme()" 
-            class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
-          >
-            <i data-lucide="sun" class="w-4 h-4 hidden dark:block text-amber-400"></i>
-            <i data-lucide="moon" class="w-4 h-4 block dark:hidden text-slate-700"></i>
-            <span>Cambia Tema</span>
-          </button>
+          <span class="font-bold text-sm text-slate-800 dark:text-slate-200">Modalità Giorno / Notte</span>
         </div>
+        <button 
+          type="button" 
+          onclick="app.toggleTheme()" 
+          class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+        >
+          <i data-lucide="sun" class="w-4 h-4 hidden dark:block text-amber-400"></i>
+          <i data-lucide="moon" class="w-4 h-4 block dark:hidden text-slate-700"></i>
+          <span>Cambia Tema</span>
+        </button>
       </div>
 
       <!-- 2. Backup & Ripristino Dati Card Compattata -->
@@ -552,7 +546,7 @@
       <!-- Versione Software (Ultima informazione della schermata Impostazioni) -->
       <div class="pt-3 pb-6 text-center border-t border-slate-200/60 dark:border-slate-800/60">
         <p class="text-xs font-medium text-slate-400 dark:text-slate-500">
-          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.34</span>
+          MassiNote WebApp • Versione <span id="app-version-badge" class="font-bold font-mono text-slate-700 dark:text-slate-300">2.35</span>
         </p>
       </div>
 
@@ -616,14 +610,24 @@
       <!-- Card Contenuto Editor (Scorre liberamente con la pagina) -->
       <div class="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 space-y-4">
         
-        <!-- Input Titolo -->
-        <div>
+        <!-- Input Titolo e Bottone AI Riorganizza Testo -->
+        <div class="flex items-center gap-2">
           <input 
             type="text" 
             id="editor-title" 
             placeholder="Titolo" 
-            class="w-full text-xl sm:text-2xl font-bold bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 px-0 py-1 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all outline-none"
+            class="flex-1 min-w-0 text-xl sm:text-2xl font-bold bg-transparent border-0 border-b border-transparent focus:border-blue-500 focus:ring-0 px-0 py-1 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all outline-none"
           >
+          <button 
+            type="button" 
+            id="editor-ai-rewrite-btn"
+            onclick="app.reorganizeNoteTextWithAi()" 
+            class="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all shrink-0 cursor-pointer"
+            title="Analizza, correggi e riorganizza il testo della nota con Gemini AI"
+          >
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>AI</span>
+          </button>
         </div>
 
         <!-- Barra Strumenti Formattazione Rapida (B = Grassetto, - = Linea, Orologio = Data GG/MM/AA, PDF = Esporta PDF, Stella = Da Lavorare) -->
@@ -689,11 +693,17 @@
         <!-- Registrazione Audio Allegata alla Nota -->
         <div id="editor-audio-container" class="space-y-2 pt-2 hidden">
           <div class="flex items-center justify-between">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <i data-lucide="mic" class="w-3.5 h-3.5 text-purple-500"></i>
-              <span>Registrazione Vocale Allegata</span>
-            </label>
-            <button type="button" onclick="app.removeEditorAudio()" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 transition-colors" title="Rimuovi file audio">
+            <button 
+              type="button" 
+              id="editor-audio-ai-btn" 
+              onclick="app.summarizeEditorAudioWithAi()" 
+              class="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer" 
+              title="Analizza e riassumi nota vocale con Gemini AI"
+            >
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+              <span>AI</span>
+            </button>
+            <button type="button" onclick="app.removeEditorAudio()" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 transition-colors cursor-pointer" title="Rimuovi file audio">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               <span>Elimina Audio</span>
             </button>
@@ -956,8 +966,8 @@
   </nav>
 
   <!-- ================= RIQUADRO CENTRALE REGISTRAZIONE VOCALE (REG + CONTATORE - TOCCA PER STOP) ================= -->
-  <div id="voice-recording-banner" class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4 hidden">
-    <div onclick="app.stopVoiceRecording()" class="bg-black/95 border-2 border-red-600 shadow-[0_0_35px_rgba(220,38,38,0.55)] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center gap-2 min-w-[210px] sm:min-w-[250px] text-center scale-in pointer-events-auto cursor-pointer select-none active:scale-95 transition-transform" title="Tocca il riquadro per interrompere la registrazione">
+  <div id="voice-recording-banner" class="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 hidden pointer-events-auto select-none" style="touch-action: none;" onclick="event.preventDefault(); event.stopPropagation(); app.stopVoiceRecording(event)">
+    <div onclick="event.preventDefault(); event.stopPropagation(); app.stopVoiceRecording(event)" class="bg-black/95 border-2 border-red-600 shadow-[0_0_35px_rgba(220,38,38,0.55)] rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center gap-2 min-w-[210px] sm:min-w-[250px] text-center scale-in pointer-events-auto cursor-pointer select-none active:scale-95 transition-transform" title="Tocca il riquadro per interrompere la registrazione">
       
       <!-- Scritta REG in Rosso Centrata -->
       <div class="flex items-center justify-center gap-2.5">
@@ -1194,7 +1204,7 @@
   </div>
 
   <!-- ================= SCHERMATA DI SBLOCCO (LOCK SCREEN CON PIN PROTETTO) ================= -->
-  <div id="lock-screen" class="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4">
+  <div id="lock-screen" class="hidden fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4">
     <div id="lock-card" class="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-5 scale-in">
       
       <!-- Icona & Intestazione -->
