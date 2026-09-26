@@ -4,7 +4,7 @@
  */
 
 // ================= CONSTANTI & UTILITY =================
-const APP_VERSION = '2.35';
+const APP_VERSION = '2.36';
 const DB_NAME = 'NotesDiaroDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'notes';
@@ -2112,7 +2112,8 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         console.warn('Rilevamento posizione automatica non disponibile:', e);
       }
 
-      // 4. Crea e salva la nota
+      // 4. Crea e salva la nota (senza modificare o forzare la categoria a 'Vocali')
+      const targetFolder = (this.isStickyFolderActive && this.stickyFolderName) ? this.stickyFolderName : '';
       const newNote = {
         id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
         title: aiTitle,
@@ -2121,7 +2122,7 @@ Rispondi ESCLUSIVAMENTE con un JSON valido con questa esatta struttura:
         date: new Date().toISOString(),
         weather: String(autoWeather || ''),
         location: String(autoLocation || ''),
-        folder: 'Vocali',
+        folder: targetFolder,
         tags: ['audio', 'ia'],
         photos: [],
         pinned: false,
@@ -3444,30 +3445,80 @@ ISTRUZIONI PER LA RISPOSTA:
     this.openEditor(null, customDate);
   }
 
-  // Helper per formattare la località solo come "Paese - Città" (es. Cina - Canton, Italia - Milano)
+  // Helper per formattare la località solo come "Stato - Città" (es. Cina - Hong Kong, Italia - Milano)
   formatLocationCountryCity(rawLoc) {
     if (!rawLoc) return '';
-    const str = rawLoc.trim();
-    if (!str) return '';
+    const s = String(rawLoc).trim();
+    if (!s) return '';
 
-    if (str.includes(' - ')) return str;
+    const cleanPart = (p) => (p || '').replace(/\s*\([^)]*\)/g, '').trim();
 
-    const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+    const KNOWN_COUNTRIES = new Set([
+      'italia', 'italy', 'cina', 'china', 'spagna', 'spain', 'francia', 'france',
+      'germania', 'germany', 'giappone', 'japan', 'stati uniti', 'usa', 'united states',
+      'regno unito', 'uk', 'united kingdom', 'inghilterra', 'england', 'svizzera', 'switzerland',
+      'austria', 'olanda', 'paesi bassi', 'netherlands', 'grecia', 'greece', 'portogallo', 'portugal',
+      'russia', 'brasile', 'brazil', 'canada', 'australia', 'thailandia', 'thailand', 'vietnam',
+      'india', 'egitto', 'egypt', 'marocco', 'morocco', 'emirati arabi uniti', 'uae', 'dubai',
+      'norvegia', 'norway', 'svezia', 'sweden', 'danimarca', 'denmark', 'finlandia', 'finland',
+      'irlanda', 'ireland', 'belgio', 'belgium', 'polonia', 'poland', 'turchia', 'turkey',
+      'messico', 'mexico', 'argentina', 'croazia', 'croatia', 'islanda', 'iceland', 'hong kong',
+      'singapore', 'corea del sud', 'south korea', 'nuova zelanda', 'new zealand'
+    ]);
+
+    // 1. Se già contiene ' - '
+    if (s.includes(' - ')) {
+      const parts = s.split(' - ').map(cleanPart).filter(Boolean);
+      if (parts.length >= 2) {
+        const p0 = parts[0];
+        const p1 = parts[1];
+        if (KNOWN_COUNTRIES.has(p1.toLowerCase()) && !KNOWN_COUNTRIES.has(p0.toLowerCase())) {
+          return `${p1} - ${p0}`;
+        }
+        return `${p0} - ${p1}`;
+      }
+      return parts[0] || s;
+    }
+
+    // 2. Formato parentesi: "Roma (Italia)" o "Hong Kong (Cina)"
+    const matchParen = s.match(/^(.*?)\s*\((.*?)\)$/);
+    if (matchParen) {
+      const c1 = cleanPart(matchParen[1]);
+      const c2 = cleanPart(matchParen[2]);
+      if (KNOWN_COUNTRIES.has(c2.toLowerCase())) {
+        return `${c2} - ${c1}`;
+      }
+      return `${c1} - ${c2}`;
+    }
+
+    // 3. Separato da virgole
+    const parts = s.split(',').map(cleanPart).filter(Boolean);
     if (parts.length === 1) {
-      return str;
+      return parts[0];
     }
 
-    // Ultima parte: Paese (es. Italia, Cina, Spagna, Francia, Germania, ecc.)
-    const country = parts[parts.length - 1].replace(/\s*\([^)]*\)/g, '').trim();
-
-    // Città: penultima parte oppure prima parte
-    let cityCandidate = parts.length === 2 ? parts[0] : parts[parts.length - 2];
-    let cleanCity = cityCandidate.replace(/\s*\([^)]*\)/g, '').trim();
-
-    if (country && cleanCity && country.toLowerCase() !== cleanCity.toLowerCase()) {
-      return `${country} - ${cleanCity}`;
+    if (parts.length === 2) {
+      const p0 = parts[0];
+      const p1 = parts[1];
+      if (KNOWN_COUNTRIES.has(p0.toLowerCase()) && !KNOWN_COUNTRIES.has(p1.toLowerCase())) {
+        return `${p0} - ${p1}`;
+      }
+      return `${p1} - ${p0}`;
     }
-    return country || cleanCity || str;
+
+    // Se ci sono più di 2 parti (es. "Via Condotti 10, Roma, Lazio, Italia")
+    const country = parts[parts.length - 1];
+    const candidateParts = parts.slice(0, -1).filter(p => !/\d+|^(via|viale|corso|piazza|street|st|ave|road|rd)\b/i.test(p));
+    const city = candidateParts.length > 0 ? candidateParts[0] : parts[0];
+
+    if (country && city && country.toLowerCase() !== city.toLowerCase()) {
+      if (!KNOWN_COUNTRIES.has(country.toLowerCase()) && KNOWN_COUNTRIES.has(parts[0].toLowerCase())) {
+        return `${parts[0]} - ${country}`;
+      }
+      return `${country} - ${city}`;
+    }
+
+    return country || city || s;
   }
 
   toggleStatSection(key) {
@@ -3971,10 +4022,87 @@ ISTRUZIONI PER LA RISPOSTA:
     }
   }
 
+  // --- GESTIONE CATEGORIE & AUTO-SUGGERIMENTI IN SCRITTURA ---
+  getExistingCategories() {
+    const set = new Set();
+    if (Array.isArray(this.notes)) {
+      for (const n of this.notes) {
+        if (!n) continue;
+        const f = (n.folder || '').trim();
+        if (f) set.add(f);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }
+
   onEditorFolderInput(val) {
     if (this.isStickyFolderActive) {
       this.stickyFolderName = (val || '').trim();
       localStorage.setItem('massinote_sticky_folder_name', this.stickyFolderName);
+    }
+    this.showFolderSuggestions(val);
+  }
+
+  showFolderSuggestions(val = '') {
+    const container = document.getElementById('editor-folder-suggestions');
+    if (!container) return;
+
+    const query = (val || '').trim().toLowerCase();
+    const categories = this.getExistingCategories();
+    if (categories.length === 0) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+
+    // Filtra per corrispondenza mano a mano che l'utente scrive (oppure mostra tutte se il campo è vuoto al focus)
+    const matches = categories.filter(c => query === '' || c.toLowerCase().includes(query));
+
+    if (matches.length === 0) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.innerHTML = matches.map(cat => {
+      const safeCat = escapeHtml(cat);
+      const jsSafeCat = cat.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `
+        <div 
+          class="px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors flex items-center justify-between group"
+          onmousedown="app.selectFolderSuggestion('${jsSafeCat}')"
+        >
+          <div class="flex items-center gap-1.5 truncate pr-2">
+            <i data-lucide="folder" class="w-3.5 h-3.5 text-indigo-500 shrink-0"></i>
+            <span class="truncate">${safeCat}</span>
+          </div>
+          <span class="text-[10px] text-slate-400 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">Seleziona</span>
+        </div>
+      `;
+    }).join('');
+
+    container.classList.remove('hidden');
+    if (window.lucide) {
+      try { lucide.createIcons(); } catch (_) {}
+    }
+  }
+
+  selectFolderSuggestion(cat) {
+    const input = document.getElementById('editor-folder');
+    if (input) {
+      input.value = cat;
+      if (this.isStickyFolderActive) {
+        this.stickyFolderName = cat;
+        localStorage.setItem('massinote_sticky_folder_name', cat);
+      }
+    }
+    this.hideFolderSuggestions();
+  }
+
+  hideFolderSuggestions() {
+    const container = document.getElementById('editor-folder-suggestions');
+    if (container) {
+      container.classList.add('hidden');
     }
   }
 

@@ -1,4 +1,4 @@
-# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.35)
+# MASTER PROMPT PER LA RICOSTRUZIONE INTEGRALE DI "MASSINOTE" (v2.36)
 
 > **Istruzioni per l'Agente AI / Sviluppatore**:
 > Usa questo prompt per ricreare da zero l'intera WebApp **MassiNote** in tutti i suoi dettagli architetturali, funzionali, grafici e di sicurezza, garantendo il 100% di compatibilità e parità assoluta con la versione Android (APK Diario) e tutte le funzionalità descritte.
@@ -8,7 +8,7 @@
 ```markdown
 Sei un Senior Full-Stack Web Engineer esperto in Progressive Web Apps (PWA), Vanilla JavaScript moderno, Tailwind CSS, Leaflet.js, Web Audio API, IndexedDB e integrazioni di Intelligenza Artificiale multimodale (Google Gemini).
 
-Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.35), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet), trasposizione esatta e sincronizzata della versione nativa Android.
+Il tuo obiettivo è creare l'applicazione web completa denominata "MassiNote" (Versione 2.36), un diario e taccuino digitale avanzato, reattivo, completamente funzionante offline e multipiattaforma (Desktop, Smartphone, Tablet), trasposizione esatta e sincronizzata della versione nativa Android.
 
 ======================================================================
 1. ARCHITETTURA TECNICA & STRUTTURA DEI FILE
@@ -55,8 +55,12 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - Filtro a Tendina "Categoria" & Esportazione PDF Categoria:
   - Posizionato sotto la barra di ricerca nella schermata principale, ordinato per data di creazione più recente in alto con conteggio note.
   - Tasto PDF dedicato per la categoria selezionata: genera un PDF multi-pagina (1 nota per pagina, foto formattate a 3 per riga).
-- Cartella Fissa / Clessidra nell'Editor:
-  - Tasto Clessidra (`data-lucide="hourglass"`) accanto al campo "Cartella / Categoria" nell'editor per applicare automaticamente la cartella a tutte le note successive.
+- Campo "Categoria" & Suggerimenti di Autocompletamento in Scrittura nell'Editor:
+  - Etichettato come "Categoria" (sotto i dettagli aggiuntivi dell'Editor).
+  - Mano a mano che l'utente scrive nel campo Categoria, un menu contestuale (`#editor-folder-suggestions`) suggerisce le categorie precedentemente create e utilizzate nelle note salvate (`getExistingCategories()`, `showFolderSuggestions()`, `selectFolderSuggestion()`).
+  - Tasto Clessidra (`data-lucide="hourglass"`) per bloccare/memorizzare la categoria fissa per le note successive.
+- Protezione Categoria su Note Vocali:
+  - L'inserimento o generazione di note vocali (da hold-to-record o AI) non modifica né sovrascrive mai la categoria in 'Vocali', rispettando la categoria fissa attiva o lasciando il campo categoria personalizzabile.
 - Protezione Anti-Click / Debounce Tasto "+" e Banner Registrazione:
   - Blocco di sicurezza da 900ms-1000ms (`_ignoreClickUntil` e `lastVoiceRecordingEndTime`) per prevenire aperture o tocchi accidentali di note sottostanti allo stop della registrazione vocale.
 
@@ -85,6 +89,8 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 - Registrazione Vocale:
   - Banner a schermo intero con blocco propagazione eventi touch (`stopVoiceRecording(e)` con `stopPropagation()` e `stopImmediatePropagation()`).
   - Dall'Editor (Tasto Microfono): tasto "Salva" (icona disco) per allegare direttamente la traccia audio alla nota senza passare da AI.
+- Statistiche & Formattazione Località "Stato - Città":
+  - Nella sezione "Località più frequenti" delle Statistiche, i luoghi vengono formattati e raggruppati rigorosamente come `Stato - Città` (es. `Cina - Hong Kong`, `Italia - Roma`, `Giappone - Tokyo`).
 - Mappa Geografica delle Note (Statistiche):
   - Mappa interattiva integrata con Leaflet sotto la sezione "Cartelle & Categorie", con badge compatto ("0 Punti").
 - Compressione Foto & Galleria:
@@ -107,7 +113,7 @@ L'applicazione deve essere autonoma, senza build tools (no Webpack, Vite, npm):
 5 viste principali:
 1. **VISTA NOTE (`#view-notes`)**: Barra di ricerca a riga unica con tasti AI e Filtro Stella, tendina Categorie con tasto PDF, card note compatte per note da lavorare.
 2. **VISTA CALENDARIO (`#view-calendar`)**: Griglia mensile con indicatore note del giorno.
-3. **VISTA STATISTICHE (`#view-stats`)**: KPI, spazio occupato, token AI, sezioni comprimibili e mappa geografica interattiva.
-4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Card Tema Giorno/Notte compatta, Backup, Ripristino, Eliminazione totale, Badge Versione 2.35.
-5. **VISTA EDITOR NOTA (`#view-editor`)**: Tasto Salva, Annulla, Allega Foto, Registra Voce, Tasto AI Riorganizza Testo, Tasto AI Riassumi Audio, Toolbar formattazione (B, -, Orologio, PDF, Stella), Clessidra Cartella Fissa.
+3. **VISTA STATISTICHE (`#view-stats`)**: KPI, spazio occupato, token AI, Località frequenti formattate `Stato - Città`, sezioni comprimibili e mappa geografica interattiva.
+4. **VISTA IMPOSTAZIONI (`#view-settings`)**: Card Tema Giorno/Notte compatta, Backup, Ripristino, Eliminazione totale, Badge Versione 2.36.
+5. **VISTA EDITOR NOTA (`#view-editor`)**: Tasto Salva, Annulla, Allega Foto, Registra Voce, Tasto AI Riorganizza Testo, Tasto AI Riassumi Audio, Toolbar formattazione (B, -, Orologio, PDF, Stella), Campo Categoria con autocompletamento e Clessidra Cartella Fissa.
 ```
